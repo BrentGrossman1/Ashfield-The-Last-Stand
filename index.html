@@ -1,0 +1,2785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A stationary-knight horde defense game with roguelite boons and weapon evolutions.">
+<title>Ashfield Last Stand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Alegreya+Sans:wght@400;700;800&display=swap">
+<style>
+/* Layout: one full-bleed canvas battlefield; HUD floats on the edges; menus are centered parchment-on-ash panels. Single dark world by design. */
+:root {
+  --ash: #14110e;
+  --ink: #ece0c8;
+  --ink-dim: #a99a80;
+  --ember: #e27b33;
+  --blood: #b3271f;
+  --rot: #8fae74;
+  --rare: #6fb0f0;
+  --epic: #c9a2e8;
+  --gold: #f0c35a;
+  --panel: rgba(22, 17, 13, 0.93);
+  --line: #4d4033;
+  --display: "Pirata One", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --body: "Alegreya Sans", "Trebuchet MS", system-ui, sans-serif;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--ash); color: var(--ink); font-family: var(--body); overflow: hidden; }
+#stage { position: relative; width: 100%; height: 100%; overflow: hidden; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+#game { display: block; width: 100%; height: 100%; }
+
+.hud { position: absolute; pointer-events: none; font-variant-numeric: tabular-nums; }
+.hud-top {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px;
+}
+.hud-group { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
+.stat { display: flex; flex-direction: column; gap: 1px; }
+.label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.value { font-family: var(--display); font-size: 28px; line-height: 1; color: var(--ink); text-shadow: 0 2px 0 #000; }
+.meter { width: 170px; max-width: 42vw; height: 10px; background: rgba(0,0,0,0.6); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.meter > div { height: 100%; width: 0; transition: width 0.12s linear; }
+#healthFill { background: linear-gradient(90deg, #7d1a14, var(--blood)); }
+#boonFill { background: linear-gradient(90deg, #8a5a1f, var(--ember)); }
+#surgeFill { background: #6c6a58; }
+.meter-row { display: flex; flex-direction: column; gap: 4px; }
+.meter-caption { font-size: 12px; color: var(--ink-dim); }
+
+.hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.stats-toggle {
+  pointer-events: auto; font: inherit; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-dim); background: rgba(14,11,9,0.8); border: 1px solid var(--line); padding: 3px 10px; cursor: pointer; border-radius: 2px;
+}
+.stats-toggle:hover { color: var(--ink); border-color: var(--ember); }
+.hud-buttons { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.stats-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.stats-panel {
+  width: 250px; max-width: calc(100vw - 32px); background: rgba(14,11,9,0.84); border: 1px solid var(--line);
+  padding: 10px 12px 8px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; border-radius: 2px;
+  max-height: calc(100vh - 140px); overflow-y: auto;
+}
+.stats-section { display: flex; flex-direction: column; gap: 2px; }
+.stats-section h3 { margin: 0 0 2px; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.stats-section.legend h3 { color: var(--gold); }
+.stats-section.horde h3 { color: #d46a5f; }
+.stat-row { display: flex; justify-content: space-between; gap: 12px; line-height: 1.35; }
+.stat-row span:first-child { color: var(--ink-dim); }
+.stat-row span:last-child { color: var(--ink); font-weight: 700; text-align: right; }
+.stat-row.weapon span:last-child { color: var(--ember); }
+.stat-row.spent span:last-child { color: var(--ink-dim); text-decoration: line-through; }
+
+#banner { position: absolute; left: 0; right: 0; top: 22%; text-align: center; pointer-events: none; opacity: 0; padding-inline: 16px; }
+#banner.show { animation: banner 2.6s ease-out forwards; }
+#banner h2 { font-family: var(--display); font-weight: 400; font-size: clamp(40px, 8vw, 72px); margin: 0; color: var(--ember); text-shadow: 0 3px 0 #000, 0 0 30px rgba(226,123,51,0.4); }
+#banner p { margin: 4px 0 0; font-size: 16px; color: var(--ink); text-shadow: 0 2px 0 #000; }
+@keyframes banner { 0% { opacity: 0; transform: translateY(10px); } 12% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; } }
+
+.screen {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px;
+  background: radial-gradient(ellipse at center, rgba(10,8,6,0.35), rgba(10,8,6,0.8));
+  cursor: default; overflow-y: auto;
+}
+[hidden] { display: none !important; }
+.panel { width: 100%; max-width: 560px; background: var(--panel); border: 1px solid var(--line); padding: 28px 28px 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+.panel h1, .panel h2 { font-family: var(--display); font-weight: 400; margin: 0; line-height: 1; text-wrap: balance; }
+.panel h1 { font-size: clamp(44px, 9vw, 64px); color: var(--ink); }
+.panel h1 span { color: var(--blood); }
+.panel h2 { font-size: clamp(34px, 7vw, 46px); }
+.panel p { margin: 12px 0 0; line-height: 1.5; color: var(--ink); max-width: 60ch; }
+.panel .muted { color: var(--ink-dim); font-size: 14px; }
+.controls { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 15px; }
+.controls li { display: flex; gap: 10px; align-items: baseline; }
+.controls kbd { font-family: var(--body); font-weight: 800; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ember); min-width: 64px; }
+.btn {
+  margin-top: 22px; font-family: var(--display); font-size: 26px; color: var(--ash); background: var(--ember);
+  border: 0; padding: 8px 26px 10px; cursor: pointer; border-radius: 2px; box-shadow: 0 3px 0 #7a3a10;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn:focus-visible, .card:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #7a3a10; }
+
+.boon-panel { max-width: 820px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+.card {
+  text-align: left; font: inherit; color: var(--ink); background: #1d1712; border: 1px solid var(--line);
+  padding: 14px 14px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; border-radius: 2px; min-width: 0;
+  transition: transform 0.12s, border-color 0.12s;
+}
+.card:hover { transform: translateY(-3px); border-color: var(--ember); }
+.card .tier { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.card.rare { border-color: #3d6a96; box-shadow: inset 0 0 24px rgba(111,176,240,0.12); }
+.card.rare .tier { color: var(--rare); }
+.card.epic { border-color: #6b4f86; box-shadow: inset 0 0 24px rgba(201,162,232,0.12); }
+.card.epic .tier { color: var(--epic); }
+.card.uncommon .tier { color: var(--rot); }
+.card.legendary { border-color: #a07a2a; background: linear-gradient(180deg, #2c2114, #1d1712); box-shadow: inset 0 0 28px rgba(240,195,90,0.18), 0 0 18px rgba(240,195,90,0.15); }
+.card.legendary .tier { color: var(--gold); }
+.card.legendary .name { color: var(--gold); }
+.card .name { font-family: var(--display); font-size: 26px; line-height: 1.05; }
+.card .effect { font-size: 14px; line-height: 1.4; color: var(--ink); }
+.reroll {
+  margin-top: 14px; font: inherit; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink); background: transparent; border: 1px solid var(--line); padding: 7px 14px; cursor: pointer; border-radius: 2px;
+}
+.reroll:hover:not(:disabled) { border-color: var(--ember); color: var(--ember); }
+.reroll:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.reroll:disabled { opacity: 0.4; cursor: default; }
+.stat-row.awakened span { color: var(--gold) !important; }
+.boon-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.boon-actions .reroll { margin-top: 0; }
+.banish-info { font-size: 12px; color: var(--ink-dim); }
+.card-slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card-slot .card { flex: 1; }
+.banish {
+  font: inherit; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim);
+  background: transparent; border: 1px dashed var(--line); padding: 4px 8px; cursor: pointer; border-radius: 2px;
+}
+.banish:hover:not(:disabled) { color: #e07a6a; border-color: #a0443a; }
+.banish:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.banish:disabled { opacity: 0.35; cursor: default; }
+.card .key { margin-top: auto; padding-top: 6px; font-size: 12px; color: var(--ink-dim); }
+
+.results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; margin-top: 16px; }
+.results .value { font-size: 32px; }
+
+@media (prefers-reduced-motion: reduce) { #banner.show { animation-duration: 2s; } .card { transition: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <div class="hud hud-top" id="hud" hidden>
+    <div class="hud-group">
+      <div class="stat"><span class="label">Wave</span><span class="value" id="waveValue">1</span></div>
+      <div class="stat"><span class="label">Slain</span><span class="value" id="killsValue">0</span></div>
+      <div class="meter-row">
+        <span class="label">Next boon</span>
+        <div class="meter"><div id="boonFill"></div></div>
+        <span class="meter-caption" id="boonCaption">0 / 6 kills</span>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-group">
+        <div class="meter-row">
+          <span class="label">Knight</span>
+          <div class="meter"><div id="healthFill"></div></div>
+          <span class="meter-caption" id="healthCaption">100 / 100</span>
+        </div>
+        <div class="meter-row">
+          <span class="label">Next surge</span>
+          <div class="meter"><div id="surgeFill"></div></div>
+          <span class="meter-caption" id="surgeCaption">25s</span>
+        </div>
+      </div>
+      <div class="hud-buttons">
+        <button class="stats-toggle" id="soundToggle" type="button" aria-pressed="false">Sound on (M)</button>
+        <button class="stats-toggle" id="statsToggle" type="button" aria-expanded="true" aria-controls="statsPanel">Hide stats (S)</button>
+      </div>
+      <div class="stats-panel" id="statsPanel"></div>
+    </div>
+  </div>
+
+  <div id="banner"><h2 id="bannerTitle"></h2><p id="bannerSub"></p></div>
+
+  <div class="screen" id="startScreen">
+    <div class="panel">
+      <h1>Ashfield <span>Last Stand</span></h1>
+      <p>The dead walk in from every side of the burnt field, and you can't leave the ring. Hold it as long as you can.</p>
+      <ul class="controls">
+        <li><kbd>Click / tap</kbd><span>Loose an arrow toward that spot. Hold to keep firing.</span></li>
+        <li><kbd>Boons</kbd><span>Every few kills, pick one of three upgrades.</span></li>
+        <li><kbd>Evolve</kbd><span>3 epic boons (Split Shot, Bone-Burst, Rime Tips) transform your bow, and 3 more evolve it again. Which weapon depends on the epics you took.</span></li>
+        <li><kbd>Surges</kbd><span>Every 25 seconds the horde grows. The stronger you get, the harder they hit back.</span></li>
+        <li><kbd>P / Esc</kbd><span>Pause.</span></li>
+        <li><kbd>M</kbd><span>Mute or unmute music and sound.</span></li>
+      </ul>
+      <button class="btn" id="startButton" type="button">Take your post</button>
+    </div>
+  </div>
+
+  <div class="screen" id="boonScreen" hidden>
+    <div class="panel boon-panel">
+      <h2>Choose a boon</h2>
+      <p class="muted" id="boonSubtitle">Pick one. The dead wait while you choose.</p>
+      <div class="cards" id="boonCards"></div>
+      <div class="boon-actions">
+        <button class="reroll" id="rerollButton" type="button">Re-roll (R)</button>
+        <span class="banish-info" id="banishInfo"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="pauseScreen" hidden>
+    <div class="panel">
+      <h2>Paused</h2>
+      <p class="muted">Press P or Esc to return to the field.</p>
+      <button class="btn" id="resumeButton" type="button">Resume</button>
+    </div>
+  </div>
+
+  <div class="screen" id="overScreen" hidden>
+    <div class="panel">
+      <h2>The ring has fallen</h2>
+      <div class="results">
+        <div class="stat"><span class="label">Wave reached</span><span class="value" id="finalWave">1</span></div>
+        <div class="stat"><span class="label">Zombies slain</span><span class="value" id="finalKills">0</span></div>
+        <div class="stat"><span class="label">Time held</span><span class="value" id="finalTime">0:00</span></div>
+        <div class="stat"><span class="label">Boons taken</span><span class="value" id="finalBoons">0</span></div>
+      </div>
+      <button class="btn" id="restartButton" type="button">Stand again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const backgroundCanvas = document.createElement('canvas');
+  const bgCtx = backgroundCanvas.getContext('2d');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const $ = (id) => document.getElementById(id);
+  const ui = {
+    hud: $('hud'), statsPanel: $('statsPanel'), statsToggle: $('statsToggle'), banner: $('banner'), bannerTitle: $('bannerTitle'), bannerSub: $('bannerSub'),
+    startScreen: $('startScreen'), boonScreen: $('boonScreen'), pauseScreen: $('pauseScreen'), overScreen: $('overScreen'),
+    boonCards: $('boonCards'), boonSubtitle: $('boonSubtitle'), rerollButton: $('rerollButton'), banishInfo: $('banishInfo'),
+    waveValue: $('waveValue'), killsValue: $('killsValue'),
+    boonFill: $('boonFill'), boonCaption: $('boonCaption'),
+    healthFill: $('healthFill'), healthCaption: $('healthCaption'),
+    surgeFill: $('surgeFill'), surgeCaption: $('surgeCaption'),
+  };
+
+  const WAVE_LENGTH = 25;
+  const BASE_STATS = {
+    damage: 5, fireCooldown: 0.55, arrowCount: 1, arrowSpeed: 520, pierce: 0, shrapnel: 0, maxHealth: 100,
+    weapon: 'bow', epicCount: 0, secondSplit: 0, secondBurst: 0, secondRime: 0, shardBonus: 0, lavaLevel: 0,
+    rime: 0, critChance: 0, executeThreshold: 0, vampire: 0, overdrawEvery: 0,
+  };
+  const EPICS_TO_EVOLVE = 3;
+  const MAX_SHRAPNEL = 4; // 15 shards per burst
+  const RARE_ROLL_CHANCE = 0.15;
+  const EPIC_CRIT_CHANCE = 0.15; // Keen Edge rolls as a purple epic this often
+  const MAX_CRIT = 0.5;
+  const MAX_REROLLS = 3;
+  const STARTING_BANISHES = 3;
+  const AURA_RADIUS = 95;
+  // family decides the projectile and base mechanic; tier-2 weapons add one mechanic on top.
+  const WEAPONS = {
+    bow: { name: 'Bow', family: 'bow', tier: 0 },
+    repeater: { name: 'Storm Repeater', family: 'repeater', tier: 1, tagline: 'Three Split Shots fused: rapid volleys of piercing bolts.' },
+    hellfire: { name: 'Hellfire Staff', family: 'hellfire', tier: 1, tagline: 'Three Bone-Bursts fused: fireballs that explode and scorch the ground.' },
+    tempest: { name: 'Tempest Tome', family: 'tempest', tier: 1, tagline: 'Mixed epics fused: bolts that chain lightning through the horde.' },
+    gatling: { name: 'Storm Gatling', family: 'repeater', tier: 2, accent: '#e6eef5', tagline: 'Fire rate ×1.6. Split Shots still add bolts.' },
+    thunderRepeater: { name: 'Thunder Repeater', family: 'repeater', tier: 2, accent: '#8fd3ff', tagline: 'Every bolt now chains lightning to nearby zombies.' },
+    infernoRepeater: { name: 'Inferno Repeater', family: 'repeater', tier: 2, accent: '#ff8a3d', tagline: 'Burning bolts set zombies alight and burst into flame.' },
+    meteor: { name: 'Meteor Staff', family: 'hellfire', tier: 2, accent: '#ffb347', tagline: 'Fireballs split into three smaller fireballs on impact.' },
+    cataclysm: { name: 'Cataclysm Staff', family: 'hellfire', tier: 2, accent: '#ff3b1f', tagline: 'Blasts leave lava pools. Bone-Bursts now grow the lava.' },
+    plasma: { name: 'Plasma Staff', family: 'hellfire', tier: 2, accent: '#ff6ad5', tagline: 'Every blast arcs fire to nearby zombies.' },
+    codex: { name: 'Storm Codex', family: 'tempest', tier: 2, accent: '#b8f0ff', tagline: 'Ball lightning zaps every zombie it passes.' },
+    thunderclap: { name: 'Thunderclap Tome', family: 'tempest', tier: 2, accent: '#ffe680', tagline: 'Every chain target bursts in a shock nova.' },
+    eye: { name: 'Eye of the Storm', family: 'tempest', tier: 2, accent: '#9fb4ff', tagline: 'A storm cloud follows your aim and strikes on its own.' },
+    frost: { name: 'Frost Scepter', family: 'frost', tier: 1, tagline: 'Three Rime Tips fused: ice shards that chill hard and freeze on the third hit.' },
+    blizzard: { name: 'Blizzard Volley', family: 'frost', tier: 2, accent: '#d8f3ff', tagline: 'Every shot sprays a fan of extra icicles.' },
+    shatter: { name: 'Shatter Scepter', family: 'frost', tier: 2, accent: '#9fe4ff', tagline: 'Hitting a frozen zombie shatters it into ice shards.' },
+    glacier: { name: 'Glacier Lance', family: 'frost', tier: 2, accent: '#7fc8ff', tagline: 'Piercing ice spears freeze everything they pass through.' },
+    hailstorm: { name: 'Hailstorm', family: 'frost', tier: 2, accent: '#c4dcff', tagline: 'Hail rains down around your aim on its own.' },
+    equinox: { name: 'Equinox Staff', family: 'equinox', tier: 1, tagline: 'Fire and frost fused: alternating orbs. Fire on a frozen zombie causes Thermal Shock.' },
+    solstice: { name: 'Solstice Staff', family: 'equinox', tier: 2, accent: '#ffd6f0', tagline: 'Every shot is a fire and frost pair. Thermal Shock chains to other frozen zombies.' },
+  };
+  // Which tier-2 weapon you get from the 3 epics taken after your first evolution.
+  // Equinox is a hybrid: any 3 epics turn it into Solstice.
+  const SECOND_EVOLUTIONS = {
+    repeater: { split: 'gatling', burst: 'thunderRepeater', mixed: 'infernoRepeater' },
+    hellfire: { split: 'meteor', burst: 'cataclysm', mixed: 'plasma' },
+    tempest: { split: 'codex', burst: 'thunderclap', mixed: 'eye' },
+    frost: { split: 'blizzard', burst: 'shatter', rime: 'glacier', mixed: 'hailstorm' },
+    equinox: { split: 'solstice', burst: 'solstice', rime: 'solstice', mixed: 'solstice' },
+  };
+  const familyOf = (weapon) => WEAPONS[weapon].family;
+  // Equinox and Solstice are staffs, so they share the Staff line's legendary awakenings.
+  const synergyFamily = (weapon) => (familyOf(weapon) === 'equinox' ? 'hellfire' : familyOf(weapon));
+  // Lines where Rime Tips counts toward the second evolution.
+  const RIME_LINES = new Set(['frost', 'equinox']);
+  const SKIN_TONES = ['#7f9b6b', '#8a9a72', '#6f8a63', '#94a07a', '#7b8f74'];
+  const SHIRT_COLORS = ['#4a4038', '#3d4a52', '#5a3a32', '#47452f', '#3b3b45'];
+
+  let viewWidth = 0, viewHeight = 0, pixelRatio = 1;
+  let game = null;
+  const pointer = { x: 0, y: 0, held: false, queued: false, hasPosition: false };
+  const embers = [];
+
+  const rand = (min, max) => min + Math.random() * (max - min);
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const center = () => ({ x: viewWidth / 2, y: viewHeight / 2 });
+
+  /* ---------- Sound: music and effects synthesized with the Web Audio API ---------- */
+  // No audio files: every note and effect is built from oscillators and filtered noise.
+  // Browsers only allow audio after a click, so it starts when the player presses "Take your post".
+  const sound = (() => {
+    let audio = null, master, musicBus, musicFilter, sfxBus, noiseBuffer;
+    let muted = false;
+    try { muted = localStorage.getItem('ashfield-muted') === '1'; } catch (e) { /* storage unavailable */ }
+    const lastPlayed = {};
+    const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+    function start() {
+      if (audio) { if (audio.state === 'suspended') audio.resume(); return; }
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      audio = new AudioCtx();
+      const compressor = audio.createDynamicsCompressor();
+      compressor.threshold.value = -18; compressor.ratio.value = 4;
+      compressor.connect(audio.destination);
+      master = audio.createGain(); master.gain.value = muted ? 0 : 0.7; master.connect(compressor);
+      musicFilter = audio.createBiquadFilter(); musicFilter.type = 'lowpass'; musicFilter.frequency.value = 12000; musicFilter.connect(master);
+      musicBus = audio.createGain(); musicBus.gain.value = 0.45; musicBus.connect(musicFilter);
+      sfxBus = audio.createGain(); sfxBus.gain.value = 0.5; sfxBus.connect(master);
+      noiseBuffer = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+      const samples = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+      startDrone();
+      startScheduler();
+    }
+
+    // Rate limit per effect so a busy screen doesn't turn into noise.
+    function ready(name, gap) {
+      if (!audio || muted) return false;
+      const now = audio.currentTime;
+      if (lastPlayed[name] !== undefined && now - lastPlayed[name] < gap) return false;
+      lastPlayed[name] = now;
+      return true;
+    }
+
+    function envelope(start, attack, duration, gain) {
+      const amp = audio.createGain();
+      amp.gain.setValueAtTime(0.0001, start);
+      amp.gain.exponentialRampToValueAtTime(gain, start + attack);
+      amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      return amp;
+    }
+    function tone({ type = 'sine', freq, freqEnd = null, start = audio.currentTime, duration = 0.2, gain = 0.2, attack = 0.005, dest = sfxBus }) {
+      const osc = audio.createOscillator();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, start);
+      if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, start + duration);
+      const amp = envelope(start, attack, duration, gain);
+      osc.connect(amp); amp.connect(dest);
+      osc.start(start); osc.stop(start + duration + 0.05);
+    }
+    function noise({ start = audio.currentTime, duration = 0.2, gain = 0.2, type = 'lowpass', freq = 1000, freqEnd = null, q = 1, attack = 0.003, dest = sfxBus }) {
+      const src = audio.createBufferSource();
+      src.buffer = noiseBuffer;
+      const filter = audio.createBiquadFilter();
+      filter.type = type; filter.Q.value = q;
+      filter.frequency.setValueAtTime(freq, start);
+      if (freqEnd) filter.frequency.exponentialRampToValueAtTime(freqEnd, start + duration);
+      const amp = envelope(start, attack, duration, gain);
+      src.connect(filter); filter.connect(amp); amp.connect(dest);
+      src.start(start, Math.random() * 1); src.stop(start + duration + 0.05);
+    }
+
+    /* Music: D minor. A low drone underneath, a i–VI–iv–V chord pad (Dm, Bb, Gm, A),
+       a bass pulse and a sparse bell melody. Drums join as the waves climb. */
+    const PROGRESSION = [[50, 53, 57], [46, 50, 53], [43, 46, 50], [45, 49, 52]];
+    const MELODY_SCALE = [62, 65, 67, 69, 70, 72, 74, 77];
+    let step = 0, nextStepTime = 0, phrase = [];
+    const intensity = () => (game && game.running ? game.wave : 0);
+    const bpm = () => 68 + Math.min(32, intensity() * 1.2);
+
+    function startDrone() {
+      const filter = audio.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.value = 260; filter.Q.value = 2;
+      const lfo = audio.createOscillator(), lfoDepth = audio.createGain();
+      lfo.frequency.value = 0.07; lfoDepth.gain.value = 120;
+      lfo.connect(lfoDepth); lfoDepth.connect(filter.frequency); lfo.start();
+      const amp = audio.createGain();
+      amp.gain.setValueAtTime(0.0001, audio.currentTime);
+      amp.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 4);
+      filter.connect(amp); amp.connect(musicBus);
+      for (const [midi, detune, type] of [[38, -6, 'sawtooth'], [38, 7, 'sawtooth'], [45, 0, 'sawtooth'], [26, 0, 'sine']]) {
+        const osc = audio.createOscillator();
+        osc.type = type; osc.frequency.value = midiToHz(midi); osc.detune.value = detune;
+        osc.connect(filter); osc.start();
+      }
+    }
+    function newPhrase() {
+      const density = Math.min(0.75, 0.35 + intensity() * 0.02);
+      phrase = Array.from({ length: 16 }, () => (Math.random() < density ? pick(MELODY_SCALE) : null));
+    }
+    function startScheduler() {
+      nextStepTime = audio.currentTime + 0.1;
+      newPhrase();
+      // Look-ahead scheduler: every 30ms, queue any eighth notes due in the next 150ms.
+      setInterval(() => {
+        if (!audio || audio.state !== 'running') return;
+        if (nextStepTime < audio.currentTime - 0.2) nextStepTime = audio.currentTime + 0.05; // tab was in the background
+        while (nextStepTime < audio.currentTime + 0.15) {
+          playStep(step, nextStepTime);
+          nextStepTime += 60 / bpm() / 2;
+          step += 1;
+        }
+      }, 30);
+    }
+    function bell(midi, t) {
+      tone({ freq: midiToHz(midi), start: t, duration: 1.4, gain: 0.05, dest: musicBus });
+      tone({ freq: midiToHz(midi + 12) * 1.003, start: t, duration: 0.6, gain: 0.015, dest: musicBus });
+    }
+    function playStep(s, t) {
+      const level = intensity();
+      const stepInBar = s % 8, bar = Math.floor(s / 8);
+      const chord = PROGRESSION[Math.floor(bar / 2) % PROGRESSION.length];
+      const beat = 60 / bpm();
+      if (s % 16 === 0) {
+        if (bar % 4 === 0) newPhrase();
+        for (const m of chord) tone({ type: 'triangle', freq: midiToHz(m), start: t, duration: beat * 8, gain: 0.035, attack: 1.2, dest: musicBus });
+      }
+      if (stepInBar === 0 || stepInBar === 4) tone({ type: 'triangle', freq: midiToHz(chord[0] - 12), start: t, duration: beat * 1.6, gain: 0.09, attack: 0.02, dest: musicBus });
+      const note = phrase[s % 16];
+      if (note) bell(note, t);
+      if (level >= 5 && (stepInBar === 0 || (level >= 12 && stepInBar === 5))) {
+        tone({ freq: 120, freqEnd: 40, start: t, duration: 0.35, gain: 0.35, dest: musicBus }); // kick
+      }
+      if (level >= 9 && (stepInBar === 2 || stepInBar === 6)) {
+        noise({ start: t, duration: 0.18, gain: 0.12, type: 'bandpass', freq: 1800, q: 0.8, dest: musicBus }); // snare
+        tone({ type: 'triangle', freq: 190, freqEnd: 120, start: t, duration: 0.1, gain: 0.08, dest: musicBus });
+      }
+      if (level >= 15) noise({ start: t, duration: 0.05, gain: stepInBar % 2 ? 0.02 : 0.035, type: 'highpass', freq: 7000, dest: musicBus }); // hats
+      if (level >= 20 && stepInBar === 7) tone({ freq: 160, freqEnd: 90, start: t, duration: 0.25, gain: 0.18, dest: musicBus }); // tom fill
+    }
+
+    const now = () => audio.currentTime;
+    return {
+      start,
+      isMuted: () => muted,
+      toggleMute() {
+        muted = !muted;
+        try { localStorage.setItem('ashfield-muted', muted ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+        if (master) master.gain.setTargetAtTime(muted ? 0 : 0.7, audio.currentTime, 0.05);
+        return muted;
+      },
+      // Pause and the boon screen muffle the music, as if heard through a wall.
+      muffle(on) { if (musicFilter) musicFilter.frequency.setTargetAtTime(on ? 650 : 12000, audio.currentTime, 0.15); },
+
+      shoot(family) {
+        if (!ready('shoot', 0.06)) return;
+        if (family === 'hellfire' || family === 'equinox') noise({ duration: 0.25, gain: 0.12, type: 'bandpass', freq: 400, freqEnd: 1400, q: 1.2 });
+        else if (family === 'tempest') { tone({ type: 'sawtooth', freq: 1400, freqEnd: 300, duration: 0.12, gain: 0.04 }); noise({ duration: 0.08, gain: 0.05, type: 'highpass', freq: 4000 }); }
+        else if (family === 'frost') { tone({ freq: 1600, freqEnd: 900, duration: 0.15, gain: 0.06 }); tone({ freq: 2400, duration: 0.1, gain: 0.03 }); }
+        else if (family === 'repeater') { noise({ duration: 0.04, gain: 0.1, type: 'bandpass', freq: 2500, q: 2 }); tone({ type: 'triangle', freq: 500, freqEnd: 250, duration: 0.06, gain: 0.06 }); }
+        else { tone({ type: 'triangle', freq: 330, freqEnd: 160, duration: 0.12, gain: 0.12 }); noise({ duration: 0.06, gain: 0.06, type: 'bandpass', freq: 1200 }); }
+      },
+      hit() { if (ready('hit', 0.05)) tone({ freq: 140, freqEnd: 70, duration: 0.08, gain: 0.08 }); },
+      kill() {
+        if (!ready('kill', 0.07)) return;
+        noise({ duration: 0.18, gain: 0.12, type: 'lowpass', freq: 900, freqEnd: 200 });
+        tone({ type: 'sawtooth', freq: 110, freqEnd: 55, duration: 0.2, gain: 0.03 });
+      },
+      explosion() {
+        if (!ready('explosion', 0.09)) return;
+        noise({ duration: 0.45, gain: 0.22, type: 'lowpass', freq: 1200, freqEnd: 120 });
+        tone({ freq: 80, freqEnd: 35, duration: 0.4, gain: 0.2 });
+      },
+      thunder() {
+        if (!ready('thunder', 0.12)) return;
+        noise({ duration: 0.12, gain: 0.16, type: 'highpass', freq: 2500 });
+        noise({ duration: 0.7, gain: 0.18, type: 'lowpass', freq: 600, freqEnd: 80, attack: 0.02 });
+      },
+      zap() { if (ready('zap', 0.08)) tone({ type: 'square', freq: 900, freqEnd: 1800, duration: 0.06, gain: 0.02 }); },
+      freeze() {
+        if (!ready('freeze', 0.12)) return;
+        tone({ freq: 2093, duration: 0.25, gain: 0.04 });
+        tone({ freq: 2637, start: now() + 0.04, duration: 0.3, gain: 0.03 });
+      },
+      crit() { if (ready('crit', 0.08)) tone({ type: 'triangle', freq: 1760, duration: 0.12, gain: 0.06 }); },
+      execute() { if (ready('execute', 0.1)) noise({ duration: 0.15, gain: 0.15, type: 'bandpass', freq: 3000, freqEnd: 600, q: 3 }); },
+      hurt() {
+        if (!ready('hurt', 0.35)) return;
+        tone({ type: 'sawtooth', freq: 95, freqEnd: 70, duration: 0.18, gain: 0.06 });
+        noise({ duration: 0.1, gain: 0.05, type: 'lowpass', freq: 500 });
+      },
+      boonOpen() {
+        if (!ready('boonOpen', 0.3)) return;
+        [74, 77, 81].forEach((m, i) => tone({ freq: midiToHz(m), start: now() + i * 0.08, duration: 0.6, gain: 0.07 }));
+      },
+      boonPick(tier) {
+        if (!ready('boonPick', 0.2)) return;
+        const chord = tier === 'legendary' ? [74, 78, 81, 86, 90] : tier === 'epic' ? [74, 77, 81, 86] : [69, 74, 77];
+        chord.forEach((m, i) => tone({ type: 'triangle', freq: midiToHz(m), start: now() + i * 0.05, duration: 0.9, gain: 0.06 }));
+      },
+      evolve() {
+        if (!ready('evolve', 1)) return;
+        noise({ duration: 1.2, gain: 0.1, type: 'bandpass', freq: 200, freqEnd: 3000, q: 2, attack: 0.6 });
+        [62, 66, 69, 74, 78].forEach((m, i) => tone({ type: 'triangle', freq: midiToHz(m), start: now() + 0.6 + i * 0.07, duration: 1.6, gain: 0.07 }));
+      },
+      surge() {
+        if (!ready('surge', 1)) return;
+        tone({ type: 'triangle', freq: midiToHz(38), duration: 1.6, gain: 0.14, attack: 0.2 });
+        tone({ type: 'triangle', freq: midiToHz(45), start: now() + 0.25, duration: 1.4, gain: 0.1, attack: 0.2 });
+      },
+      phoenix() {
+        if (!ready('phoenix', 1)) return;
+        noise({ duration: 1, gain: 0.14, type: 'bandpass', freq: 300, freqEnd: 4000, q: 1.5, attack: 0.3 });
+        tone({ type: 'triangle', freq: 220, freqEnd: 880, duration: 1, gain: 0.08, attack: 0.3 });
+      },
+      gameOver() {
+        [62, 60, 57, 50].forEach((m, i) => tone({ freq: midiToHz(m), start: now() + i * 0.35, duration: 1.6, gain: 0.08 }));
+      },
+    };
+  })();
+
+  /* ---------- Background ---------- */
+  function pointAwayFromCenter(minDistance) {
+    const { x: cx, y: cy } = center();
+    for (let i = 0; i < 40; i++) {
+      const x = rand(0, viewWidth), y = rand(0, viewHeight);
+      if (Math.hypot(x - cx, y - cy) > minDistance) return { x, y };
+    }
+    return { x: rand(0, viewWidth), y: rand(0, 40) };
+  }
+
+  function stonePolygon(g, x, y, radius, color) {
+    const sides = 5 + Math.floor(Math.random() * 3);
+    g.beginPath();
+    for (let i = 0; i < sides; i++) {
+      const angle = (i / sides) * Math.PI * 2 + rand(-0.3, 0.3);
+      const r = radius * rand(0.65, 1.1);
+      const px = x + Math.cos(angle) * r, py = y + Math.sin(angle) * r * 0.7;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+    g.fillStyle = color; g.fill();
+    g.strokeStyle = 'rgba(255,240,220,0.10)'; g.lineWidth = 1; g.stroke();
+  }
+
+  function drawRubble(g, x, y) {
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.beginPath(); g.ellipse(x, y + 6, 34, 12, 0, 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 2; i++) {
+      g.save(); g.translate(x + rand(-20, 20), y + rand(-6, 6)); g.rotate(rand(-1, 1));
+      g.fillStyle = '#21180f'; g.fillRect(-18, -2.5, 36, 5);
+      g.fillStyle = 'rgba(226,123,51,0.25)'; g.fillRect(10, -2.5, 4, 5);
+      g.restore();
+    }
+    const count = 5 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < count; i++) {
+      stonePolygon(g, x + rand(-24, 24), y + rand(-10, 10), rand(4, 13), pick(['#5b5650', '#4a4540', '#6b655c', '#3e3a35']));
+    }
+  }
+
+  function drawTombstone(g, x, y) {
+    g.save(); g.translate(x, y); g.rotate(rand(-0.22, 0.22));
+    const w = rand(16, 24), h = rand(24, 34);
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.beginPath(); g.ellipse(4, 0, w * 0.8, 5, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath();
+    g.moveTo(-w / 2, 0); g.lineTo(-w / 2, -h + w / 2); g.arc(0, -h + w / 2, w / 2, Math.PI, 0); g.lineTo(w / 2, 0); g.closePath();
+    g.fillStyle = '#67635b'; g.fill();
+    g.fillStyle = '#4f4b45'; g.fillRect(w / 2 - 4, -h + w / 2, 4, h - w / 2);
+    g.strokeStyle = '#3a3732'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(0, -h + 6); g.lineTo(0, -h + 16); g.moveTo(-4, -h + 10); g.lineTo(4, -h + 10); g.stroke();
+    g.strokeStyle = '#2b2925'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(-w / 2 + 3, -h * 0.5); g.lineTo(-2, -h * 0.35); g.lineTo(1, -h * 0.2); g.stroke();
+    g.restore();
+  }
+
+  function drawWall(g, x, y) {
+    g.save(); g.translate(x, y); g.rotate(rand(-0.4, 0.4));
+    const columns = 5 + Math.floor(Math.random() * 3);
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(-4, 2, columns * 14 + 8, 8);
+    for (let c = 0; c < columns; c++) {
+      const rows = 1 + Math.floor(Math.random() * 4);
+      for (let r = 0; r < rows; r++) {
+        const offset = r % 2 ? 7 : 0;
+        g.fillStyle = pick(['#5e5248', '#54493f', '#665a4e']);
+        g.fillRect(c * 14 + offset * 0.3, -r * 8 - 8, 13, 7);
+      }
+    }
+    g.restore();
+    for (let i = 0; i < 5; i++) stonePolygon(g, x + rand(0, 80), y + rand(4, 16), rand(3, 7), '#544a40');
+  }
+
+  function drawDeadTree(g, x, y) {
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    g.beginPath(); g.ellipse(x + 10, y + 2, 30, 8, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#1b1510'; g.lineCap = 'round';
+    const branch = (bx, by, angle, length, width, depth) => {
+      const ex = bx + Math.cos(angle) * length, ey = by + Math.sin(angle) * length;
+      g.lineWidth = width; g.beginPath(); g.moveTo(bx, by); g.lineTo(ex, ey); g.stroke();
+      if (depth <= 0) return;
+      const splits = depth > 2 ? 2 : 1 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < splits; i++) branch(ex, ey, angle + rand(-0.75, 0.75), length * rand(0.55, 0.75), width * 0.65, depth - 1);
+    };
+    branch(x, y, -Math.PI / 2 + rand(-0.2, 0.2), rand(30, 46), 7, 4);
+  }
+
+  function paintBackground() {
+    const g = bgCtx;
+    g.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    const { x: cx, y: cy } = center();
+    const area = viewWidth * viewHeight;
+
+    const base = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(viewWidth, viewHeight) * 0.75);
+    base.addColorStop(0, '#3b3427'); base.addColorStop(1, '#1d1914');
+    g.fillStyle = base; g.fillRect(0, 0, viewWidth, viewHeight);
+
+    const blotchColors = ['rgba(74,62,42,0.35)', 'rgba(25,20,15,0.4)', 'rgba(82,80,52,0.22)', 'rgba(60,40,30,0.25)'];
+    for (let i = 0; i < area / 8000; i++) {
+      const x = rand(0, viewWidth), y = rand(0, viewHeight), r = rand(20, 90);
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, pick(blotchColors)); grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    for (let i = 0; i < area / 60000 + 3; i++) {
+      const { x, y } = pointAwayFromCenter(90); const r = rand(40, 120);
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, 'rgba(8,6,4,0.6)'); grad.addColorStop(0.6, 'rgba(15,10,6,0.3)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    const grassColors = ['#5c5636', '#6e6440', '#4b4a2e', '#7a6a3e', '#57603a', '#665b38'];
+    g.lineCap = 'round';
+    for (let i = 0; i < area / 110; i++) {
+      const x = rand(0, viewWidth), y = rand(0, viewHeight);
+      if (Math.hypot(x - cx, y - cy - 10) < 50) continue;
+      const blades = 2 + Math.floor(Math.random() * 4);
+      const burnt = Math.random() < 0.25;
+      for (let b = 0; b < blades; b++) {
+        const dx = rand(-5, 5), h = rand(4, 11);
+        g.strokeStyle = burnt ? pick(['#1e1a14', '#2a241b', '#3a3424']) : pick(grassColors);
+        g.lineWidth = rand(0.8, 1.6);
+        g.beginPath(); g.moveTo(x + b * 1.5, y);
+        g.quadraticCurveTo(x + b * 1.5 + dx * 0.3, y - h * 0.6, x + b * 1.5 + dx, y - h); g.stroke();
+      }
+    }
+    for (let i = 0; i < area / 1800; i++) {
+      g.fillStyle = pick(['#5a554d', '#46413a', '#6a6358']);
+      g.beginPath(); g.ellipse(rand(0, viewWidth), rand(0, viewHeight), rand(1, 2.5), rand(0.8, 1.6), 0, 0, Math.PI * 2); g.fill();
+    }
+
+    const features = [];
+    for (let i = 0; i < area / 120000 + 1; i++) features.push(['tree', pointAwayFromCenter(Math.min(viewWidth, viewHeight) * 0.35)]);
+    for (let i = 0; i < area / 200000 + 1; i++) features.push(['wall', pointAwayFromCenter(150)]);
+    for (let i = 0; i < area / 90000 + 3; i++) features.push(['rubble', pointAwayFromCenter(120)]);
+    for (let i = 0; i < area / 110000 + 2; i++) features.push(['tomb', pointAwayFromCenter(130)]);
+    features.sort((a, b) => a[1].y - b[1].y);
+    for (const [kind, p] of features) {
+      if (kind === 'tree') drawDeadTree(g, p.x, p.y);
+      else if (kind === 'wall') drawWall(g, p.x, p.y);
+      else if (kind === 'rubble') drawRubble(g, p.x, p.y);
+      else drawTombstone(g, p.x, p.y);
+    }
+
+    // trampled ring where the knight stands
+    const ring = g.createRadialGradient(cx, cy + 14, 10, cx, cy + 14, 70);
+    ring.addColorStop(0, 'rgba(48,38,28,0.9)'); ring.addColorStop(1, 'rgba(48,38,28,0)');
+    g.fillStyle = ring; g.fillRect(cx - 70, cy - 56, 140, 140);
+
+    g.fillStyle = 'rgba(120,40,20,0.07)'; g.fillRect(0, 0, viewWidth, viewHeight);
+  }
+
+  function resize() {
+    const rect = stage.getBoundingClientRect();
+    viewWidth = Math.max(1, rect.width); viewHeight = Math.max(1, rect.height);
+    pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    for (const c of [canvas, backgroundCanvas]) { c.width = Math.round(viewWidth * pixelRatio); c.height = Math.round(viewHeight * pixelRatio); }
+    paintBackground();
+  }
+
+  /* ---------- Upgrades ---------- */
+  const UPGRADES = [
+    // Commons take a multiplier m: 1 normally, 2 when the card rolls as a blue rare.
+    { id: 'damage', name: 'Honed Broadheads', tier: 'common', weight: 10,
+      effect: (s, m = 1) => `Damage ${s.damage} → ${s.damage + 3 * m}.`, apply: (s, m = 1) => { s.damage += 3 * m; } },
+    { id: 'rate', name: 'Quick Draw', tier: 'common', weight: 10, available: (s) => s.fireCooldown > 0.1,
+      effect: (s, m = 1) => `Fire rate +${25 * m}% (${(1 / s.fireCooldown).toFixed(1)} → ${((1 + 0.25 * m) / s.fireCooldown).toFixed(1)} shots/sec).`,
+      apply: (s, m = 1) => { s.fireCooldown /= 1 + 0.25 * m; } },
+    { id: 'speed', name: 'Goose Fletching', tier: 'common', weight: 6, available: (s) => s.arrowSpeed < 1100,
+      effect: (s, m = 1) => `Shots fly ${25 * m}% faster.`, apply: (s, m = 1) => { s.arrowSpeed *= 1 + 0.25 * m; } },
+    { id: 'mend', name: 'Field Dressing', tier: 'common', weight: 6,
+      effect: (s, m = 1) => `Max health ${s.maxHealth} → ${s.maxHealth + 20 * m}, and heal to full.`,
+      apply: (s, m = 1) => { s.maxHealth += 20 * m; game.health = s.maxHealth; } },
+    { id: 'pierce', name: 'Bodkin Points', tier: 'uncommon', weight: 5,
+      effect: (s) => `Shots pass through ${s.pierce + 1} zombie${s.pierce ? 's' : ''} before stopping.`,
+      apply: (s) => { s.pierce += 1; } },
+    { id: 'execute', name: 'Executioner', tier: 'uncommon', weight: 4, available: (s) => s.executeThreshold < 0.25,
+      effect: (s) => (s.executeThreshold
+        ? `Execute threshold ${Math.round(s.executeThreshold * 100)}% → ${Math.round(s.executeThreshold * 100) + 5}% health.`
+        : 'Direct hits instantly kill zombies under 10% health.'),
+      apply: (s) => { s.executeThreshold = s.executeThreshold ? s.executeThreshold + 0.05 : 0.1; } },
+    { id: 'vampire', name: 'Vampiric Tips', tier: 'uncommon', weight: 4,
+      effect: (s) => (s.vampire ? `Heal ${s.vampire + 1} health per kill instead of ${s.vampire}.` : 'Heal 1 health for every zombie you kill.'),
+      apply: (s) => { s.vampire += 1; } },
+    { id: 'overdraw', name: 'Overdraw', tier: 'uncommon', weight: 4, available: (s) => s.overdrawEvery === 0 || s.overdrawEvery > 4,
+      effect: (s) => (s.overdrawEvery
+        ? `Overdraw charges every ${s.overdrawEvery - 2} shots instead of ${s.overdrawEvery}.`
+        : 'Every 8th shot deals triple damage. Your weapon glows gold when it is charged.'),
+      apply: (s) => { s.overdrawEvery = s.overdrawEvery ? s.overdrawEvery - 2 : 8; } },
+    // Keen Edge is a blue rare that can itself roll up to a purple epic (+12% instead of +5%).
+    { id: 'crit', name: 'Keen Edge', tier: 'rare', weight: 4, available: (s) => s.critChance < MAX_CRIT,
+      effect: (s, m = 1) => {
+        const now = Math.round(s.critChance * 100);
+        return `Critical hit chance ${now}% → ${Math.min(MAX_CRIT * 100, now + (m > 1 ? 12 : 5))}%. Direct hits that crit deal double damage.`;
+      },
+      apply: (s, m = 1) => { s.critChance = Math.min(MAX_CRIT, s.critChance + (m > 1 ? 0.12 : 0.05)); } },
+    { id: 'rime', name: 'Rime Tips', tier: 'epic', weight: 3,
+      effect: (s) => (s.rime
+        ? `Chill slows ${chillPercent(s.rime + 1)}% and ${freezePercent(s.rime + 1)}% of hits freeze zombies solid for 1 second.`
+        : 'Hits chill zombies, slowing them 25% for 2 seconds.') + evolveHint(s, 'rime'),
+      apply: (s) => { s.rime += 1; } },
+    { id: 'split', name: 'Split Shot', tier: 'epic', weight: 3,
+      effect: (s) => `Loose ${s.arrowCount + 1} projectiles per shot in a fan.${evolveHint(s)}`, apply: (s) => { s.arrowCount += 1; } },
+    { id: 'shrapnel', name: 'Bone-Burst Tips', tier: 'epic', weight: 3,
+      // On the Tempest line the bone shards become forking static arcs.
+      displayName: (s) => (familyOf(s.weapon) === 'tempest' ? 'Static Burst' : 'Bone-Burst Tips'),
+      effect: (s) => {
+        let text;
+        const isTempest = familyOf(s.weapon) === 'tempest';
+        if (s.shrapnel >= MAX_SHRAPNEL && s.weapon === 'cataclysm') text = `Shards are maxed. Lava pools grow 25% wider and burn longer.`;
+        else if (isTempest && s.shrapnel >= MAX_SHRAPNEL) text = `Static arcs are maxed at 15. Arc damage +25%.`;
+        else if (isTempest) text = `Impacts fork into ${6 + s.shrapnel * 3} static arcs instead of ${6 + (s.shrapnel - 1) * 3}.`;
+        else if (s.shrapnel >= MAX_SHRAPNEL) text = `Shards are maxed at 15. Shard damage +25%.`;
+        else if (s.shrapnel) text = `Bursts throw ${6 + s.shrapnel * 3} shards instead of ${6 + (s.shrapnel - 1) * 3}.`;
+        else text = 'Shots burst into 6 shards in every direction on impact.';
+        return text + evolveHint(s);
+      },
+      apply: (s) => {
+        if (s.shrapnel < MAX_SHRAPNEL) s.shrapnel += 1;
+        else if (s.weapon === 'cataclysm') s.lavaLevel += 1;
+        else s.shardBonus += 0.25;
+      } },
+    ...[
+      { id: 'harvest', name: "Reaper's Harvest", effect: 'Every kill releases a homing soul that hunts the nearest zombie.' },
+      { id: 'consecrated', name: 'Consecrated Ground', effect: 'A holy ring around the knight burns every zombie that steps inside it.' },
+      { id: 'phoenix', name: 'Phoenix Plume', effect: 'Once this run, when you fall you rise at full health and burn every zombie on the field.' },
+      { id: 'thunder', name: 'Stormcaller', effect: 'Hits have a 15% chance to call down lightning for triple damage and a shock blast.' },
+      { id: 'plague', name: 'Plague Bloat', effect: 'Hits have a 20% chance to infect. Infected zombies swell and burst after 1.5s, splashing gore on the dead around them.' },
+      { id: 'thrall', name: 'Necrotic Thrall', effect: 'Hits have an 8% chance to turn a zombie into a rotting ally. It fights for you until it decays, about 6 seconds.' },
+      { id: 'ward', name: 'Grave Ward', effect: 'Three skulls orbit the knight. Each shot throws one like a boomerang that bites every zombie on the way out and back.' },
+    ].map((legend) => ({
+      ...legend, tier: 'legendary', weight: 0.35,
+      // Consecrated Ground can be taken again to widen the ring; the rest are one-time.
+      effect: () => {
+        if (legend.id === 'consecrated' && game.auraLevel) {
+          return `Your holy ring grows 35% wider (${Math.round(auraRadius())} → ${Math.round(auraRadius(game.auraLevel + 1))} px across the knight).`;
+        }
+        const family = synergyFamily(game.stats.weapon);
+        const awakening = family === 'bow'
+          ? ' Awakens when your bow evolves.'
+          : ` Awakens with your ${WEAPONS[game.stats.weapon].name}: ${SYNERGIES[legend.id][family][1]}`;
+        return legend.effect + awakening;
+      },
+      available: () => legend.id === 'consecrated' || !game.legendaries.has(legend.id),
+      apply: () => {
+        game.legendaries.add(legend.id);
+        if (legend.id === 'consecrated') game.auraLevel += 1;
+      },
+    })),
+  ];
+  // Legendary awakenings: once you own a legendary and an evolved weapon, the legendary
+  // gains an extra effect themed to that weapon family. [name, description]
+  const SYNERGIES = {
+    consecrated: {
+      repeater: ['Blessed Bolts', 'Bolts pierce one more zombie and trail holy light.'],
+      hellfire: ['Holy Fire', 'Your flames burn gold and deal 50% more damage.'],
+      tempest: ['Radiant Smite', 'Your lightning becomes holy light that deals 50% more damage.'],
+      frost: ['Hallowed Frost', 'The holy ring chills zombies, and frozen ones burn twice as fast.'],
+    },
+    thunder: {
+      repeater: ['Ricochet Storm', 'Lightning strikes leap to a second zombie.'],
+      hellfire: ['Firestorm', 'Lightning strikes leave burning ground.'],
+      tempest: ['Living Storm', 'Lightning strike chance doubles to 30%.'],
+      frost: ['Frozen Lightning', 'Lightning strikes freeze everything in their blast.'],
+    },
+    plague: {
+      repeater: ['Shrapnel Bloat', 'Bloated zombies burst into a ring of 8 bolts.'],
+      hellfire: ['Plague Fire', 'Burning zombies can catch the plague.'],
+      tempest: ['Infectious Arcs', 'Your lightning arcs can infect.'],
+      frost: ['Frostbloat', 'Plague bursts freeze the zombies they splash.'],
+    },
+    thrall: {
+      repeater: ['Bone Archers', 'Thralls fire bone darts at nearby zombies.'],
+      hellfire: ['Burning Thralls', 'Thralls set whatever they bite on fire.'],
+      tempest: ['Static Thralls', 'Thralls shock zombies around them.'],
+      frost: ['Frost Thralls', 'Thralls chill what they bite and can freeze it solid.'],
+    },
+    harvest: {
+      repeater: ['Twin Souls', 'Each kill releases two souls.'],
+      hellfire: ['Ember Souls', 'Souls explode in fire when they hit.'],
+      tempest: ['Chained Souls', 'Souls chain lightning to a second zombie.'],
+      frost: ['Ice Wraiths', 'Souls freeze the zombies they hit.'],
+    },
+    phoenix: {
+      repeater: ['Phoenix Volley', 'Reviving fires a ring of 30 piercing bolts.'],
+      hellfire: ['Ashen Rebirth', 'Reviving leaves a ring of lava around you for 8 seconds.'],
+      tempest: ['Storm Rebirth', 'Reviving calls lightning down on the horde for 6 seconds.'],
+      frost: ['Frost Nova', 'Reviving freezes every zombie on the field for 5 seconds.'],
+    },
+    ward: {
+      repeater: ['Bone Sentries', 'Thrown skulls spit bone darts at 3 zombies when they turn around.'],
+      hellfire: ['Burning Skulls', 'Skull bites set zombies on fire.'],
+      tempest: ['Storm Skulls', 'Skull bites chain lightning to a nearby zombie.'],
+      frost: ['Frozen Skulls', 'Skull bites freeze zombies solid.'],
+    },
+  };
+  // Returns the weapon family a legendary is awakened for, or null if it isn't awake.
+  function awakened(legendId) {
+    if (!game.legendaries.has(legendId) || WEAPONS[game.stats.weapon].tier < 1) return null;
+    return synergyFamily(game.stats.weapon);
+  }
+  // Rime Tips: chill strength and freeze chance by number of Rimes taken.
+  const chillPercent = (rime) => Math.round(Math.min(0.6, 0.25 + 0.1 * (rime - 1)) * 100);
+  const freezePercent = (rime) => Math.round(Math.min(0.4, 0.1 * (rime - 1)) * 100);
+  function announceAwakenings() {
+    const fresh = [...game.legendaries].filter((id) => awakened(id) && !game.awakenedShown.has(id));
+    if (!fresh.length) return;
+    fresh.forEach((id) => game.awakenedShown.add(id));
+    const [name, text] = SYNERGIES[fresh[0]][awakened(fresh[0])];
+    game.evolveFlash = Math.max(game.evolveFlash, 0.6);
+    showBanner(fresh.length > 1 ? `${fresh.length} legendaries awaken` : `${name} awakens`, fresh.length > 1 ? 'Check the stats panel for what changed.' : text);
+  }
+  // Consecrated Ground's awakening on the Staff and Tome lines.
+  const holyFire = () => awakened('consecrated') === 'hellfire';
+  const radiantLightning = () => awakened('consecrated') === 'tempest';
+  const lightningMult = () => (radiantLightning() ? 1.5 : 1);
+  const lightningColor = (normal) => (radiantLightning() ? '#ffe39a' : normal);
+  function tryInfect(z, chance) {
+    if (game.legendaries.has('plague') && !z.dead && !z.ally && !z.mutant && !z.revenant && z.infectTimer == null && Math.random() < chance) z.infectTimer = 1.5;
+  }
+
+  function auraRadius(level = game.auraLevel) { return AURA_RADIUS * (1 + 0.35 * (level - 1)); }
+  function auraDps() { return 6 + game.stats.damage * 1.5; }
+  function evolveHint(s, epicId) {
+    const tier = WEAPONS[s.weapon].tier;
+    if (tier === 0) return ` Epic ${s.epicCount + 1}/${EPICS_TO_EVOLVE} toward evolving your bow.`;
+    if (tier === 1 && epicId === 'rime' && !RIME_LINES.has(familyOf(s.weapon))) return ` Doesn't count toward evolving your ${WEAPONS[s.weapon].name}.`;
+    if (tier === 1) return ` Epic ${s.secondSplit + s.secondBurst + s.secondRime + 1}/${EPICS_TO_EVOLVE} toward evolving your ${WEAPONS[s.weapon].name}.`;
+    return '';
+  }
+
+  // First evolution from the first 3 epics. Rime only combines with Bone-Burst (fire and ice);
+  // with Split Shot there is no combo, so whichever you took more of wins.
+  function firstEvolution(split, burst, rime) {
+    if (split >= EPICS_TO_EVOLVE) return 'repeater';
+    if (burst >= EPICS_TO_EVOLVE) return 'hellfire';
+    if (rime >= EPICS_TO_EVOLVE) return 'frost';
+    if (rime && burst && !split) return 'equinox';
+    if (rime && split && !burst) return rime > split ? 'frost' : 'repeater';
+    return 'tempest';
+  }
+  const UPGRADE_NAMES = Object.fromEntries(UPGRADES.map((u) => [u.id, u.name]));
+
+  // Called after every epic boon. epicId is 'split', 'shrapnel' or 'rime'.
+  function checkEvolution(epicId) {
+    const s = game.stats;
+    const tier = WEAPONS[s.weapon].tier;
+    let weapon = null;
+    if (tier === 0 && s.epicCount >= EPICS_TO_EVOLVE) {
+      weapon = firstEvolution(s.arrowCount - 1, s.shrapnel, s.rime);
+    } else if (tier === 1) {
+      // Rime only counts toward evolving the frost and fire-ice lines; elsewhere it just chills.
+      if (epicId === 'rime' && !RIME_LINES.has(familyOf(s.weapon))) return;
+      if (epicId === 'split') s.secondSplit += 1;
+      else if (epicId === 'shrapnel') s.secondBurst += 1;
+      else s.secondRime += 1;
+      if (s.secondSplit + s.secondBurst + s.secondRime < EPICS_TO_EVOLVE) return;
+      const path = s.secondSplit >= EPICS_TO_EVOLVE ? 'split'
+        : s.secondBurst >= EPICS_TO_EVOLVE ? 'burst'
+          : s.secondRime >= EPICS_TO_EVOLVE ? 'rime' : 'mixed';
+      weapon = SECOND_EVOLUTIONS[s.weapon][path];
+    }
+    if (!weapon) return;
+    s.weapon = weapon;
+    if (weapon === 'repeater') { s.fireCooldown *= 0.5; s.arrowCount += 2; s.pierce += 1; }
+    if (weapon === 'hellfire') { s.damage = Math.round(s.damage * 1.5); s.fireCooldown /= 1.2; }
+    if (weapon === 'tempest') { s.damage = Math.round(s.damage * 1.2); }
+    if (weapon === 'frost') { s.damage = Math.round(s.damage * 1.2); }
+    if (weapon === 'equinox') { s.damage = Math.round(s.damage * 1.35); s.fireCooldown /= 1.1; }
+    if (weapon === 'glacier') s.pierce += 3;
+    if (weapon === 'hailstorm') game.hailTimer = 0;
+    if (WEAPONS[weapon].tier === 2) s.damage = Math.round(s.damage * 1.15);
+    if (weapon === 'gatling') s.fireCooldown *= 0.6;
+    if (weapon === 'cataclysm') s.lavaLevel = 1;
+    if (weapon === 'eye') game.stormCloud = { x: center().x, y: center().y - 120, timer: 0.5 };
+    game.evolveFlash = 1;
+    showBanner(WEAPONS[weapon].name, WEAPONS[weapon].tagline);
+    sound.evolve();
+  }
+
+  // exclude: boon ids already on screen (used when a banish redraws one card).
+  function rollBoons(count = 3, exclude = new Set()) {
+    const pool = UPGRADES.filter((u) => !game.banished.has(u.id) && !exclude.has(u.id) && (!u.available || u.available(game.stats)));
+    const chosen = [];
+    while (chosen.length < count && pool.length) {
+      const total = pool.reduce((sum, u) => sum + u.weight, 0);
+      let roll = Math.random() * total;
+      const index = pool.findIndex((u) => (roll -= u.weight) <= 0);
+      const boon = pool.splice(index, 1)[0];
+      // Commons can roll as a blue rare at double strength; Keen Edge can roll as a purple epic.
+      let multiplier = 1, tier = boon.tier, label = boon.tier;
+      if (boon.tier === 'common' && Math.random() < RARE_ROLL_CHANCE) { multiplier = 2; tier = 'rare'; label = 'rare · double strength'; }
+      if (boon.id === 'crit' && Math.random() < EPIC_CRIT_CHANCE) { multiplier = 2; tier = 'epic'; label = 'epic · empowered'; }
+      chosen.push({ boon, multiplier, tier, label });
+    }
+    return chosen;
+  }
+
+  function banishBoon(index) {
+    if (!game.choosing || game.banishes <= 0 || !offeredBoons[index]) return;
+    const { boon } = offeredBoons[index];
+    game.banishes -= 1;
+    game.banished.add(boon.id);
+    const onScreen = new Set(offeredBoons.map((o) => o.boon.id));
+    const [replacement] = rollBoons(1, onScreen);
+    if (replacement) offeredBoons[index] = replacement; else offeredBoons.splice(index, 1);
+    renderBoonCards();
+    updateStatsPanel();
+  }
+
+  let offeredBoons = [];
+  function openBoonChoice() {
+    game.choosing = true;
+    pointer.held = false; pointer.queued = false;
+    offeredBoons = rollBoons();
+    sound.boonOpen();
+    sound.muffle(true);
+    ui.boonSubtitle.textContent = `${game.kills} slain. Pick one; the dead wait while you choose.`;
+    renderBoonCards();
+    ui.boonScreen.hidden = false;
+  }
+
+  function rerollBoons() {
+    if (!game.choosing || game.rerolls <= 0) return;
+    game.rerolls -= 1;
+    offeredBoons = rollBoons();
+    renderBoonCards();
+    updateStatsPanel();
+  }
+
+  function renderBoonCards() {
+    ui.rerollButton.disabled = game.rerolls <= 0;
+    ui.rerollButton.textContent = game.rerolls > 0 ? `Re-roll (R) · ${game.rerolls} left` : 'No re-rolls left';
+    ui.banishInfo.textContent = game.banishes > 0
+      ? `${game.banishes} banish${game.banishes > 1 ? 'es' : ''} left · Shift+1/2/3`
+      : 'No banishes left';
+    ui.boonCards.innerHTML = '';
+    offeredBoons.forEach(({ boon, multiplier, tier, label }, i) => {
+      const slot = document.createElement('div');
+      slot.className = 'card-slot';
+      const card = document.createElement('button');
+      card.type = 'button'; card.id = `boon-${i}`;
+      card.className = `card ${tier}`;
+      card.innerHTML = `<span class="tier">${label}</span><span class="name">${boon.displayName ? boon.displayName(game.stats) : boon.name}</span><span class="effect">${boon.effect(game.stats, multiplier)}</span><span class="key">Press ${i + 1}</span>`;
+      card.addEventListener('click', () => takeBoon(i));
+      const banish = document.createElement('button');
+      banish.type = 'button'; banish.id = `banish-${i}`; banish.className = 'banish';
+      banish.textContent = 'Banish';
+      banish.title = 'Remove this boon from the pool for the rest of the run';
+      banish.disabled = game.banishes <= 0;
+      banish.addEventListener('click', () => banishBoon(i));
+      slot.append(card, banish);
+      ui.boonCards.appendChild(slot);
+    });
+  }
+
+  function takeBoon(index) {
+    if (!offeredBoons[index] || !game.choosing) return;
+    const { boon, multiplier } = offeredBoons[index];
+    sound.boonPick(offeredBoons[index].tier);
+    sound.muffle(false);
+    boon.apply(game.stats, multiplier);
+    if (boon.tier === 'epic') { game.stats.epicCount += 1; checkEvolution(boon.id); }
+    if (boon.tier === 'legendary') showBanner(boon.name, 'Legendary boon claimed.');
+    // Let an evolution banner finish before announcing any awakening it unlocked.
+    if (game.evolveFlash >= 1) setTimeout(announceAwakenings, 2700); else announceAwakenings();
+    game.boonsTaken += 1;
+    game.lastBoonAt = game.kills;
+    game.nextBoonAt = game.kills + 6 + game.boonsTaken * 4;
+    game.choosing = false;
+    ui.boonScreen.hidden = true;
+    pointer.held = false; pointer.queued = false;
+    updateStatsPanel();
+  }
+
+  function updateStatsPanel() {
+    const s = game.stats;
+    const row = (label, value, cls = '') => `<div class="stat-row ${cls}"><span>${label}</span><span>${value}</span></div>`;
+    const section = (title, rows, cls = '') => `<div class="stats-section ${cls}"><h3>${title}</h3>${rows.join('')}</div>`;
+    const d = s.damage;
+
+    const knight = [
+      row('Weapon', WEAPONS[s.weapon].name, 'weapon'),
+      row('Damage', d),
+      row('Attack speed', `${(1 / s.fireCooldown).toFixed(2)} / sec`),
+      row('Projectiles', `×${s.arrowCount}`),
+      row('Max health', s.maxHealth),
+      row('Re-rolls', `${game.rerolls} / ${MAX_REROLLS}`),
+      row('Banishes', `${game.banishes} left`),
+    ];
+    const family = familyOf(s.weapon);
+    if (s.critChance) knight.push(row('Crit chance', `${Math.round(s.critChance * 100)}% · ×2`));
+    if (s.executeThreshold) knight.push(row('Execute', `under ${Math.round(s.executeThreshold * 100)}% health`));
+    if (s.vampire) knight.push(row('Life per kill', `+${s.vampire}`));
+    if (s.overdrawEvery) knight.push(row('Overdraw', `×3 every ${s.overdrawEvery} shots`));
+    if (s.rime || family === 'frost') knight.push(row('Chill', `${Math.round(chillAmount() * 100)}% slow${freezeChance() ? ` · ${Math.round(freezeChance() * 100)}% freeze` : ''}`));
+    if (s.pierce) knight.push(row('Pierce', `${s.pierce} zombie${s.pierce > 1 ? 's' : ''}`));
+    const shardLabel = family === 'tempest' ? 'Static arcs' : family === 'frost' ? 'Ice shards' : 'Shards';
+    if (s.shrapnel) knight.push(row(shardLabel, `${6 + (s.shrapnel - 1) * 3} × ${shardDamage(d)} dmg${s.shrapnel >= MAX_SHRAPNEL ? ' (max)' : ''}`));
+    if (s.arrowSpeed > BASE_STATS.arrowSpeed) knight.push(row('Shot speed', `+${Math.round((s.arrowSpeed / BASE_STATS.arrowSpeed - 1) * 100)}%`));
+    const tier = WEAPONS[s.weapon].tier;
+    if (tier === 0) knight.push(row('Evolution', `${s.epicCount} / ${EPICS_TO_EVOLVE} epics`));
+    if (tier === 1) knight.push(row('Evolution II', `${s.secondSplit + s.secondBurst + s.secondRime} / ${EPICS_TO_EVOLVE} epics`));
+    if (family === 'frost') knight.push(row('Freeze', 'every 3rd hit on a zombie'));
+    if (s.weapon === 'blizzard') knight.push(row('Icicles', `+4 × ${Math.round(d * 0.5)} dmg`));
+    if (s.weapon === 'shatter') knight.push(row('Shatter', `×2 dmg + 8 ice shards`));
+    if (s.weapon === 'hailstorm') knight.push(row('Hail', `${Math.round(d * 0.6)} dmg every ${hailInterval().toFixed(2)}s`));
+    if (family === 'equinox') knight.push(row('Thermal Shock', `${d * 3} dmg${s.weapon === 'solstice' ? ' · chains ×2' : ''}`));
+    if (family === 'hellfire') knight.push(row('Blast', `${blastRadius()} px`));
+    if (family === 'hellfire' && s.weapon !== 'cataclysm') knight.push(row('Burn', `${Math.round(d * 0.6)}/s for 2s`));
+    if (s.weapon === 'cataclysm') knight.push(row('Lava', `${Math.round(lavaRadius())} px · ${d}/s · ${lavaLife().toFixed(1)}s`));
+    if (s.weapon === 'meteor') knight.push(row('Split', `3 × ${Math.round(d * 0.5)} dmg`));
+    if (s.weapon === 'plasma') knight.push(row('Fire arcs', `3 × ${Math.round(d * 0.7)} dmg`));
+    if (family === 'tempest') knight.push(row('Chain', `${tempestJumps()} jumps × ${Math.round(d * 0.75)} dmg`));
+    if (s.weapon === 'codex') knight.push(row('Zap', `${Math.round(d * 0.35)} dmg · 4/sec`));
+    if (s.weapon === 'thunderclap') knight.push(row('Shock nova', `${Math.round(d * 0.5)} dmg each`));
+    if (s.weapon === 'eye') knight.push(row('Storm strike', `${d * 2} dmg every ${stormInterval().toFixed(2)}s`));
+    if (s.weapon === 'thunderRepeater') knight.push(row('Chain', `${thunderJumps()} jumps × ${Math.round(d * 0.6)} dmg`));
+    if (s.weapon === 'infernoRepeater') knight.push(row('Ignite', `${Math.round(d * 0.5)}/s for 3s · burst ${Math.round(d * 0.5)}`));
+
+    const legendRows = [];
+    const legends = game.legendaries;
+    if (legends.has('consecrated')) legendRows.push(row(`Consecrated${game.auraLevel > 1 ? ` (${game.auraLevel})` : ''}`, `${Math.round(auraDps())}/s · ${Math.round(auraRadius())} px`));
+    if (legends.has('harvest')) legendRows.push(row("Reaper's Harvest", `souls hit ${Math.max(2, Math.round(d * 1.2))}`));
+    if (legends.has('ward')) legendRows.push(row('Grave Ward', `${Math.round(d * 1.5)} / bite`));
+    if (legends.has('thunder')) legendRows.push(row('Stormcaller', `${Math.round(strikeChance(false) * 100)}% · ${Math.round(d * 3 * lightningMult())} dmg`));
+    if (legends.has('plague')) legendRows.push(row('Plague Bloat', `20% · ${Math.round(d * 2.5)} burst`));
+    if (legends.has('thrall')) legendRows.push(row('Necrotic Thrall', `8% · ally ${Math.round(6 + d * 1.5)}/s`));
+    if (legends.has('phoenix')) legendRows.push(row('Phoenix Plume', game.phoenixUsed ? 'Spent' : 'Ready', game.phoenixUsed ? 'spent' : ''));
+    for (const id of legends) {
+      const awakeFamily = awakened(id);
+      if (awakeFamily) legendRows.push(row(`✦ ${SYNERGIES[id][awakeFamily][0]}`, 'awakened', 'awakened'));
+    }
+
+    const horde = waveSettings(game.wave);
+    const hordeRows = [
+      row('Zombie health', Math.round(horde.zombieHealth)),
+      row('Bite damage', `${horde.biteDps.toFixed(1)} / sec`),
+      row('Arrivals', `${(horde.batch / horde.spawnEvery).toFixed(1)} / sec`),
+    ];
+    if (game.wave >= MUTANT_WAVE) hordeRows.push(row('Mutated', `${Math.round(mutationChance(game.wave) * 100)}% of spawns`));
+    if (game.wave >= REVENANT_WAVE) hordeRows.push(row('Revenants', `${Math.round(revenantChance(game.wave) * 100)}% of spawns`));
+    if (game.wave > 25) hordeRows.push(row('Speed bonus', `+${Math.round((lateSpeedBonus(game.wave) - 1) * 100)}%`));
+
+    ui.statsPanel.innerHTML = section('Knight', knight)
+      + (legendRows.length ? section('Legendaries', legendRows, 'legend') : '')
+      + section(`The horde · wave ${game.wave}`, hordeRows, 'horde');
+  }
+
+  /* ---------- Game flow ---------- */
+  function newGame() {
+    game = {
+      running: true, over: false, paused: false, choosing: false,
+      time: 0, wave: 1, waveTimer: 0, spawnTimer: 0.6,
+      kills: 0, boonsTaken: 0, lastBoonAt: 0, nextBoonAt: 6,
+      stats: { ...BASE_STATS }, health: BASE_STATS.maxHealth, cooldown: 0,
+      zombies: [], arrows: [], particles: [], splats: [], numbers: [],
+      blasts: [], bolts: [], burns: [], glows: [],
+      legendaries: new Set(), phoenixUsed: false, auraLevel: 0, awakenedShown: new Set(),
+      rerolls: 1, rebirthStorm: 0, rebirthStrikeTimer: 0,
+      banishes: STARTING_BANISHES, banished: new Set(), shotCount: 0, wardAngle: 0, hailTimer: 0, frostNova: 0,
+      shake: 0, flash: 0, evolveFlash: 0, auraSpin: 0, aimAngle: -Math.PI / 2,
+    };
+    ui.startScreen.hidden = true; ui.overScreen.hidden = true; ui.boonScreen.hidden = true; ui.pauseScreen.hidden = true;
+    ui.hud.hidden = false;
+    setStatsVisible(viewWidth >= 700);
+    updateStatsPanel();
+    sound.start();
+    sound.muffle(false);
+    showBanner('Wave 1', 'They smell you. Hold the ring.');
+  }
+
+  function showBanner(title, sub) {
+    ui.bannerTitle.textContent = title; ui.bannerSub.textContent = sub;
+    ui.banner.classList.remove('show'); void ui.banner.offsetWidth; ui.banner.classList.add('show');
+  }
+
+  // How much stronger the player is than a fresh bow. The horde scales against this.
+  function powerRating() {
+    const s = game.stats;
+    let power = (s.damage / s.fireCooldown) * s.arrowCount * (1 + s.pierce * 0.35) * (1 + s.shrapnel * 0.45);
+    power *= { bow: 1, repeater: 1.2, hellfire: 1.6, tempest: 1.5, frost: 1.4, equinox: 1.6 }[familyOf(s.weapon)];
+    power *= 1 + s.critChance;
+    if (WEAPONS[s.weapon].tier === 2) power *= 1.4;
+    power *= 1 + game.legendaries.size * 0.15;
+    return Math.max(1, power / (BASE_STATS.damage / BASE_STATS.fireCooldown));
+  }
+
+  // The horde gets an HP-per-second budget. It grows 20% per wave but only follows the
+  // square root of the player's power, so upgrades pull you ahead and the waves slowly catch up.
+  // The horde ramps at half speed through wave 10 (an "effective wave" of 5.5 by then),
+  // then grows at the normal one-wave-per-wave rate with no jump.
+  const EASY_RAMP_UNTIL = 10;
+  function scalingWave(wave) {
+    if (wave <= EASY_RAMP_UNTIL) return 1 + (wave - 1) * 0.5;
+    return 1 + (EASY_RAMP_UNTIL - 1) * 0.5 + (wave - EASY_RAMP_UNTIL);
+  }
+
+  // Base speed caps around wave 27. From wave 25 the horde gets +2% speed per wave on top,
+  // up to +40% at wave 45, so long runs keep building pressure.
+  const lateSpeedBonus = (realWave) => 1 + Math.min(0.4, Math.max(0, realWave - 25) * 0.02);
+
+  function waveSettings(realWave) {
+    const wave = scalingWave(realWave);
+    const power = powerRating();
+    const pressure = Math.sqrt(power);
+    const zombieHealth = (10 + (wave - 1) * 3) * Math.pow(1.04, wave - 1) * (1 + (pressure - 1) * 0.2);
+    const hordeHpPerSecond = 5 * Math.pow(1.2, wave - 1) * pressure;
+    const batch = 1 + Math.floor((wave - 1) / 4);
+    return {
+      batch,
+      zombieHealth,
+      spawnEvery: Math.max(0.15, (batch * zombieHealth) / hordeHpPerSecond),
+      zombieSpeed: Math.min(60, 20 + wave * 1.8) * lateSpeedBonus(realWave),
+      biteDps: 8 * (1 + (wave - 1) * 0.12) * (1 + (pressure - 1) * 0.15),
+    };
+  }
+
+  function setStatsVisible(visible) {
+    ui.statsPanel.hidden = !visible;
+    ui.statsToggle.setAttribute('aria-expanded', String(visible));
+    ui.statsToggle.textContent = visible ? 'Hide stats (S)' : 'Show stats (S)';
+  }
+
+  const SURGE_LINES = ['More of them are rising.', 'The field is crawling now.', 'They come faster.', 'Graves are emptying.', 'The horde thickens.'];
+
+  function setPaused(paused) {
+    if (!game || !game.running || game.choosing) return;
+    game.paused = paused; ui.pauseScreen.hidden = !paused;
+    pointer.held = false; pointer.queued = false;
+    sound.muffle(paused);
+  }
+
+  function endGame() {
+    game.running = false; game.over = true;
+    pointer.held = false;
+    sound.gameOver();
+    sound.muffle(true);
+    const seconds = Math.floor(game.time);
+    $('finalWave').textContent = game.wave;
+    $('finalKills').textContent = game.kills;
+    $('finalTime').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    $('finalBoons').textContent = game.boonsTaken;
+    ui.overScreen.hidden = false;
+  }
+
+  /* ---------- Entities ---------- */
+  const MUTANT_WAVE = 30;
+  // 8% of spawns at wave 30, +1% per wave, capped at 30%.
+  const mutationChance = (wave) => (wave >= MUTANT_WAVE ? Math.min(0.3, 0.08 + (wave - MUTANT_WAVE) * 0.01) : 0);
+  const REVENANT_WAVE = 40;
+  // 4% of spawns at wave 40, +1% per wave, capped at 15%.
+  const revenantChance = (wave) => (wave >= REVENANT_WAVE ? Math.min(0.15, 0.04 + (wave - REVENANT_WAVE) * 0.01) : 0);
+
+  function spawnZombie(settings) {
+    const margin = 40;
+    let x, y;
+    const side = Math.floor(Math.random() * 4);
+    if (side === 0) { x = rand(0, viewWidth); y = -margin; }
+    else if (side === 1) { x = viewWidth + margin; y = rand(0, viewHeight); }
+    else if (side === 2) { x = rand(0, viewWidth); y = viewHeight + margin; }
+    else { x = -margin; y = rand(0, viewHeight); }
+    // Special types roll first, rarest first, so each share matches its chance function.
+    // Revenants (wave 40+): immune to plague and thralls, quarter knockback, 2.2x health; frost still works.
+    // Mutants (wave 30+): immune to plague, half knockback, +50% health.
+    const revenant = Math.random() < revenantChance(game.wave);
+    const mutant = !revenant && Math.random() < mutationChance(game.wave);
+    const brute = !revenant && !mutant && game.wave >= 3 && Math.random() < Math.min(0.3, 0.06 + scalingWave(game.wave) * 0.02);
+    const health = settings.zombieHealth * (brute ? 2.6 : revenant ? 2.2 : mutant ? 1.5 : 1);
+    game.zombies.push({
+      x, y, health, maxHealth: health, brute, revenant, biteDps: settings.biteDps * (brute ? 2 : revenant ? 1.5 : 1),
+      ally: false, infectTimer: null, facing: x < viewWidth / 2 ? 1 : -1,
+      seed: rand(0, 10), burning: 0, burnStyle: 'fire', dotStored: 0, dotTimer: 0, dotColor: '#ffb347',
+      chill: 0, chillTimer: 0, frozenTimer: game.frostNova > 0 ? 1 : 0, frostHits: 0, wardCooldown: 0,
+      speed: settings.zombieSpeed * (brute ? 0.65 : revenant ? 0.85 : rand(0.85, 1.15)),
+      radius: brute ? 20 : revenant ? 17 : 14,
+      walkPhase: rand(0, 6), hitFlash: 0, knockX: 0, knockY: 0, attacking: false,
+      skin: brute ? '#6a7d5c' : revenant ? '#3b3236' : mutant ? '#9aa3a8' : pick(SKIN_TONES),
+      shirt: brute ? '#3a2b3c' : revenant ? '#1e1719' : mutant ? '#3a2430' : pick(SHIRT_COLORS), mutant, dead: false,
+    });
+  }
+
+  function bowOrigin() {
+    const { x: cx, y: cy } = center();
+    return { x: cx, y: cy - 4 };
+  }
+
+  function fire() {
+    const s = game.stats;
+    const origin = bowOrigin();
+    const family = familyOf(s.weapon);
+    const spread = family === 'repeater' ? 0.08 : 0.14;
+    const speed = (family === 'hellfire' || family === 'equinox') ? s.arrowSpeed * 0.75
+      : family === 'frost' ? s.arrowSpeed * 1.1 : s.arrowSpeed;
+    const blessed = awakened('consecrated') === 'repeater';
+    // Overdraw: every Nth shot deals triple damage.
+    game.shotCount += 1;
+    const overdrawn = s.overdrawEvery > 0 && game.shotCount % s.overdrawEvery === 0;
+    const damage = s.damage * (overdrawn ? 3 : 1);
+    // Equinox alternates fire and frost orbs; Solstice fires both in one shot.
+    const element = s.weapon === 'solstice' ? 'both' : family === 'equinox' ? (game.shotCount % 2 ? 'fire' : 'frost') : null;
+    const launch = (angle, extra = {}) => game.arrows.push({
+      x: origin.x + Math.cos(angle) * 18, y: origin.y + Math.sin(angle) * 18,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, kind: family, weapon: s.weapon, zapTimer: 0, element, overdraw: overdrawn,
+      damage, pierceLeft: s.pierce + (blessed ? 1 : 0), holy: blessed, hitSet: new Set(), life: 3, shard: false, dead: false, ...extra,
+    });
+    for (let i = 0; i < s.arrowCount; i++) launch(game.aimAngle + (i - (s.arrowCount - 1) / 2) * spread);
+    if (s.weapon === 'blizzard') {
+      for (let i = 0; i < 4; i++) launch(game.aimAngle + rand(-0.45, 0.45), { icicle: true, damage: Math.max(1, Math.round(damage * 0.5)), pierceLeft: 0 });
+    }
+    if (overdrawn) {
+      for (let i = 0; i < 10; i++) addParticle(origin.x, origin.y, rand(-90, 90), rand(-90, 90), 0.4, 2.5, pick(['#ffe14d', '#fff1c0']));
+    }
+    throwWardSkull();
+    sound.shoot(family);
+  }
+
+  // Chill and freeze. Chill slows; frozen zombies stop moving and can't bite.
+  function chillAmount() {
+    const s = game.stats;
+    const fromRime = s.rime ? Math.min(0.6, 0.25 + 0.1 * (s.rime - 1)) : 0;
+    return familyOf(s.weapon) === 'frost' ? Math.max(fromRime, 0.35) : fromRime;
+  }
+  const freezeChance = () => (game.stats.rime ? Math.min(0.4, 0.1 * (game.stats.rime - 1)) : 0);
+  const hailInterval = () => Math.max(0.08, game.stats.fireCooldown * 0.5);
+  function applyChill(z, amount, seconds = 2) {
+    if (z.dead || z.ally || amount <= 0) return;
+    z.chill = z.chillTimer > 0 ? Math.max(z.chill, amount) : amount;
+    z.chillTimer = Math.max(z.chillTimer, seconds);
+  }
+  function freezeZombie(z, seconds) {
+    if (z.dead || z.ally) return;
+    if (z.frozenTimer <= 0) {
+      sound.freeze();
+      const hc = zombieHitCenter(z);
+      for (let i = 0; i < 6; i++) addParticle(hc.x, hc.y, rand(-60, 60), rand(-60, 60), 0.4, 2, pick(['#e8f8ff', '#9fe4ff']));
+    }
+    z.frozenTimer = Math.max(z.frozenTimer, seconds);
+  }
+
+  // Equinox line: fire landing on a frozen zombie. Solstice chains it to other frozen zombies.
+  function thermalShock(z, damage, canChain) {
+    if (z.dead) return;
+    const hc = zombieHitCenter(z);
+    const fireMult = holyFire() ? 1.5 : 1;
+    z.frozenTimer = 0;
+    damageZombie(z, damage * 3 * fireMult, '#ffd6f0');
+    explode(hc.x, hc.y, 55, damage * 1.5 * fireMult, z, 'steam');
+    for (let i = 0; i < 12; i++) addParticle(hc.x, hc.y, rand(-50, 50), rand(-110, -20), 0.8, rand(3, 5), 'rgba(240,240,240,0.7)');
+    if (!canChain || game.stats.weapon !== 'solstice') return;
+    const chained = new Set([z]);
+    for (let i = 0; i < 2; i++) {
+      let next = null, best = 160;
+      for (const other of game.zombies) {
+        if (other.dead || other.ally || chained.has(other) || other.frozenTimer <= 0) continue;
+        const d = Math.hypot(other.x - z.x, other.y - z.y);
+        if (d < best) { best = d; next = other; }
+      }
+      if (!next) break;
+      chained.add(next);
+      const nh = zombieHitCenter(next);
+      game.bolts.push({ points: jaggedPath(hc.x, hc.y, nh.x, nh.y, 6), life: 0.22, maxLife: 0.22, color: '#ffb0e0', width: 2.5 });
+      thermalShock(next, damage, false);
+    }
+  }
+
+  // Shatter Scepter and frost-line Bone-Bursts: chilling ice shards.
+  function iceShards(x, y, damage, sourceZombie, count) {
+    const offset = rand(0, Math.PI * 2);
+    for (let i = 0; i < count; i++) {
+      const angle = offset + (i / count) * Math.PI * 2;
+      game.arrows.push({
+        x, y, vx: Math.cos(angle) * 380, vy: Math.sin(angle) * 380, damage: Math.max(1, Math.round(damage)), pierceLeft: 0,
+        hitSet: new Set([sourceZombie]), life: 0.38, shard: true, kind: 'shard', ice: true, dead: false,
+      });
+    }
+  }
+
+  function executeZombie(z) {
+    sound.execute();
+    const hc = zombieHitCenter(z);
+    game.numbers.push({ x: hc.x, y: hc.y - z.radius - 6, text: 'EXECUTED', life: 0.9, color: '#ff5a4a', big: true });
+    for (let i = 0; i < 10; i++) addParticle(hc.x, hc.y, rand(-120, 120), rand(-120, 60), 0.5, 3, pick(['#ff5a4a', '#7d2a20']));
+    killZombie(z);
+  }
+
+  function jaggedPath(x1, y1, x2, y2, segments) {
+    const points = [[x1, y1]];
+    const length = Math.hypot(x2 - x1, y2 - y1) || 1;
+    const nx = -(y2 - y1) / length, ny = (x2 - x1) / length;
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments, jitter = rand(-1, 1) * Math.min(18, length * 0.12);
+      points.push([x1 + (x2 - x1) * t + nx * jitter, y1 + (y2 - y1) * t + ny * jitter]);
+    }
+    points.push([x2, y2]);
+    return points;
+  }
+
+  function nearestHostile(x, y, maxRange = Infinity, exclude = null) {
+    let best = null, bestDistance = maxRange;
+    for (const z of game.zombies) {
+      if (z.dead || z.ally || (exclude && exclude.has(z))) continue;
+      const d = Math.hypot(z.x - x, z.y - y);
+      if (d < bestDistance) { bestDistance = d; best = z; }
+    }
+    return best;
+  }
+
+  // Damage over time: no hit flash; numbers are batched every half second in update().
+  // ignite: 'fire' or 'holy' sets the zombie visibly burning; null for plain damage (ally bites).
+  function dotDamage(z, amount, color, ignite) {
+    if (z.dead || z.ally) return;
+    z.dotStored += amount; z.dotColor = color;
+    if (ignite) { z.burning = 0.3; z.burnStyle = ignite; }
+    damageZombie(z, amount, null, false);
+  }
+
+  function damageZombie(z, amount, numberColor, flash = true) {
+    if (z.dead || z.ally) return;
+    z.health -= amount;
+    if (flash) z.hitFlash = 0.12;
+    if (numberColor) {
+      const hc = zombieHitCenter(z);
+      game.numbers.push({ x: hc.x + rand(-6, 6), y: hc.y - z.radius, text: String(Math.round(amount)), life: 0.7, color: numberColor });
+    }
+    if (z.health <= 0) killZombie(z);
+  }
+
+  const BLAST_PALETTES = {
+    fire: ['#ffb347', '#e27b33', '#ff5a1f', '#ffd27a'],
+    gore: ['#8fbf4a', '#7d2a20', '#4d6b3a', '#a0c060'],
+    spark: ['#bfe8ff', '#8fd3ff', '#ffffff'],
+    holy: ['#f0c35a', '#fff1c0', '#ffb347'],
+    ice: ['#bfe8ff', '#e8f8ff', '#7fc8ff'],
+    steam: ['#f4f4f4', '#ffd6f0', '#cfe9ff'],
+  };
+  // onHit(zombie) runs for each zombie caught in the blast that survives it (used for freezes).
+  function explode(x, y, radius, damage, exclude, style, onHit = null) {
+    const palette = BLAST_PALETTES[style];
+    if (radius >= 40) sound.explosion();
+    for (const z of game.zombies) {
+      if (z === exclude || z.dead || z.ally) continue;
+      const hc = zombieHitCenter(z);
+      const d = Math.hypot(hc.x - x, hc.y - y);
+      if (d < radius + z.radius) {
+        z.knockX += ((hc.x - x) / (d || 1)) * 80; z.knockY += ((hc.y - y) / (d || 1)) * 80;
+        damageZombie(z, damage, palette[0]);
+        if (onHit && !z.dead) onHit(z);
+      }
+    }
+    game.blasts.push({ x, y, radius, life: 0.35, maxLife: 0.35, color: palette[0] });
+    for (let i = 0; i < 14; i++) addParticle(x, y, rand(-radius * 3, radius * 3), rand(-radius * 3, radius * 3), rand(0.3, 0.6), rand(2, 4), pick(palette));
+  }
+
+  // Weapon helper numbers, shared by the mechanics and the stats panel.
+  const shardDamage = (damage) => Math.max(1, Math.round(damage * 0.45 * (1 + game.stats.shardBonus)));
+  const blastRadius = () => 55 + game.stats.shrapnel * 12;
+  const lavaRadius = () => blastRadius() * (1.1 + 0.25 * (game.stats.lavaLevel - 1));
+  const lavaLife = () => 4 + 0.5 * (game.stats.lavaLevel - 1);
+  const tempestJumps = () => 2 + game.stats.epicCount;
+  const thunderJumps = () => 2 + game.stats.secondBurst;
+  const stormInterval = () => Math.max(0.2, game.stats.fireCooldown * 1.5);
+
+  function chainLightning(from, damage, jumps, nova) {
+    const visited = new Set([from]);
+    const infectious = awakened('plague') === 'tempest';
+    let current = from;
+    for (let i = 0; i < jumps; i++) {
+      const next = nearestHostile(current.x, current.y, 160, visited);
+      if (!next) break;
+      visited.add(next);
+      const a = zombieHitCenter(current), b = zombieHitCenter(next);
+      game.bolts.push({ points: jaggedPath(a.x, a.y, b.x, b.y, 6), life: 0.18, maxLife: 0.18, color: lightningColor(nova ? '#ffe680' : '#8fd3ff'), width: 2 });
+      damageZombie(next, damage * lightningMult(), lightningColor('#8fd3ff'));
+      sound.zap();
+      if (nova) explode(b.x, b.y, 40, game.stats.damage * 0.5 * lightningMult(), next, radiantLightning() ? 'holy' : 'spark');
+      if (infectious) tryInfect(next, 0.15);
+      current = next;
+    }
+  }
+
+  // Plasma Staff: fire arcs from a blast to the nearest zombies outside it.
+  function plasmaArcs(x, y, damage, exclude) {
+    const hit = new Set([exclude]);
+    for (let i = 0; i < 3; i++) {
+      const target = nearestHostile(x, y, 170, hit);
+      if (!target) break;
+      hit.add(target);
+      const hc = zombieHitCenter(target);
+      game.bolts.push({ points: jaggedPath(x, y, hc.x, hc.y, 7), life: 0.22, maxLife: 0.22, color: '#ff6ad5', width: 2.5 });
+      damageZombie(target, damage * 0.7, '#ff9de6');
+    }
+  }
+
+  // Meteor Staff: three smaller fireballs fan out from the impact.
+  function splitFireball(a, sourceZombie) {
+    const heading = Math.atan2(a.vy, a.vx);
+    for (const offset of [-0.7, 0, 0.7]) {
+      const angle = heading + offset;
+      game.arrows.push({
+        x: a.x, y: a.y, vx: Math.cos(angle) * 320, vy: Math.sin(angle) * 320, kind: 'hellfire', weapon: a.weapon, mini: true,
+        damage: Math.max(1, Math.round(a.damage * 0.5)), pierceLeft: 0, hitSet: new Set([sourceZombie]), life: 0.6, shard: false, dead: false,
+      });
+    }
+  }
+
+  // Lightning lights up only the ground where it lands, never the whole screen:
+  // strikes can repeat several times a second, and full-screen flashing at that rate
+  // is a photosensitivity hazard.
+  function addStrikeGlow(x, y) {
+    game.glows.push({ x, y, radius: 75, life: 0.3, maxLife: 0.3, rgb: radiantLightning() ? '255,227,154' : '200,235,255' });
+    if (game.glows.length > 40) game.glows.shift();
+  }
+
+  // Stormcaller's base proc chance, doubled when it awakens on the Tome line.
+  function strikeChance(weak) {
+    return (weak ? 0.04 : 0.15) * (awakened('thunder') === 'tempest' ? 2 : 1);
+  }
+
+  function lightningStrike(z, canRicochet = true) {
+    sound.thunder();
+    const hc = zombieHitCenter(z);
+    const d = game.stats.damage;
+    game.bolts.push({ points: jaggedPath(hc.x + rand(-40, 40), -20, hc.x, hc.y, 10), life: 0.28, maxLife: 0.28, color: lightningColor('#e6f7ff'), width: 3.5 });
+    addStrikeGlow(hc.x, hc.y);
+    const stormFamily = awakened('thunder');
+    // Frozen Lightning (frost line): strikes freeze everything in the blast.
+    const freezeHit = stormFamily === 'frost' ? (target) => freezeZombie(target, 1.5) : null;
+    damageZombie(z, d * 3 * lightningMult(), lightningColor('#bfe8ff'));
+    if (freezeHit && !z.dead) freezeHit(z);
+    explode(hc.x, hc.y, 45, d * 1.5 * lightningMult(), z, radiantLightning() ? 'holy' : 'spark', freezeHit);
+    if (stormFamily === 'repeater' && canRicochet) {
+      const next = nearestHostile(hc.x, hc.y, 170, new Set([z]));
+      if (next) lightningStrike(next, false);
+    }
+    if (stormFamily === 'hellfire') {
+      game.burns.push({ x: z.x, y: z.y, radius: 45, life: 2, maxLife: 2, dps: d * 0.8, seed: rand(0, 10), holy: holyFire() });
+    }
+  }
+
+  function convertToThrall(z) {
+    z.ally = true; z.infectTimer = null;
+    z.health = z.maxHealth; z.allyDecay = z.maxHealth / 6;
+    z.hitFlash = 0.25;
+    const hc = zombieHitCenter(z);
+    for (let i = 0; i < 12; i++) addParticle(hc.x, hc.y, rand(-90, 90), rand(-90, 90), 0.5, 3, pick(['#9a7bb8', '#6ff2ff', '#4b2f63']));
+    game.kills += 1;
+    checkBoon();
+  }
+
+  function plagueBurst(z) {
+    const hc = zombieHitCenter(z);
+    // Frostbloat (frost line): the splash freezes what it hits.
+    const freezeHit = awakened('plague') === 'frost' ? (target) => freezeZombie(target, 1) : null;
+    explode(hc.x, hc.y, 85, game.stats.damage * 2.5, z, 'gore', freezeHit);
+    game.splats.push({ x: z.x, y: z.y, rx: 34, ry: 14, rot: rand(-0.3, 0.3), color: 'rgba(70,95,30,0.5)' });
+    if (awakened('plague') === 'repeater') {
+      // Shrapnel Bloat: a ring of 8 bolts. Marked as spray so they don't trigger weapon effects.
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        game.arrows.push({
+          x: hc.x, y: hc.y, vx: Math.cos(angle) * 460, vy: Math.sin(angle) * 460, kind: 'repeater', weapon: game.stats.weapon, spray: true,
+          damage: game.stats.damage, pierceLeft: 1, hitSet: new Set([z]), life: 0.6, shard: false, dead: false,
+        });
+      }
+    }
+    killZombie(z);
+  }
+
+  function spawnSoul(position) {
+    if (game.arrows.filter((a) => a.kind === 'soul').length >= 25) return;
+    const angle = rand(0, Math.PI * 2);
+    game.arrows.push({
+      x: position.x, y: position.y, vx: Math.cos(angle) * 180, vy: Math.sin(angle) * 180, kind: 'soul', homing: true,
+      damage: Math.max(2, Math.round(game.stats.damage * 1.2)), pierceLeft: 0, hitSet: new Set(), life: 3, shard: false, dead: false,
+    });
+  }
+
+  function rollLegendaryProcs(z, a) {
+    const legends = game.legendaries;
+    const weak = a.shard || a.kind === 'soul' || a.spray;
+    if (legends.has('thunder') && Math.random() < strikeChance(weak)) lightningStrike(z);
+    if (z.dead || z.ally) return;
+    if (legends.has('plague')) tryInfect(z, weak ? 0.06 : 0.2);
+    if (legends.has('thrall') && !z.revenant && z.infectTimer == null && Math.random() < (weak ? 0.03 : 0.08)) convertToThrall(z);
+  }
+
+  // Necrotic Thrall's awakening: Bone Archers shoot darts, Static Thralls shock zombies near them.
+  // (Burning Thralls is handled where thralls bite.)
+  function updateThrallAwakening(thrall, dt) {
+    const family = awakened('thrall');
+    const d = game.stats.damage;
+    const hc = zombieHitCenter(thrall);
+    if (family === 'repeater') {
+      thrall.dartTimer = (thrall.dartTimer ?? rand(0, 1)) - dt;
+      if (thrall.dartTimer > 0) return;
+      thrall.dartTimer = 1;
+      const target = nearestHostile(thrall.x, thrall.y, 240);
+      if (!target) return;
+      const th = zombieHitCenter(target);
+      const angle = Math.atan2(th.y - hc.y, th.x - hc.x);
+      game.arrows.push({
+        x: hc.x, y: hc.y, vx: Math.cos(angle) * 420, vy: Math.sin(angle) * 420, kind: 'shard', shard: true, dart: true,
+        damage: Math.max(1, Math.round(d * 0.8)), pierceLeft: 0, hitSet: new Set(), life: 0.7, dead: false,
+      });
+    }
+    if (family === 'tempest') {
+      thrall.shockTimer = (thrall.shockTimer ?? rand(0, 0.5)) - dt;
+      if (thrall.shockTimer > 0) return;
+      thrall.shockTimer = 0.5;
+      const shocked = new Set();
+      for (let i = 0; i < 3; i++) {
+        const target = nearestHostile(thrall.x, thrall.y, 75, shocked);
+        if (!target) break;
+        shocked.add(target);
+        const th = zombieHitCenter(target);
+        game.bolts.push({ points: jaggedPath(hc.x, hc.y, th.x, th.y, 4), life: 0.12, maxLife: 0.12, color: lightningColor('#6ff2ff'), width: 1.5 });
+        damageZombie(target, d * 0.25 * lightningMult(), lightningColor('#6ff2ff'));
+      }
+    }
+  }
+
+  // Grave Ward: three skulls. Docked skulls orbit the knight and bite anything that gets close.
+  // Each shot throws one docked skull like a boomerang: it bites everything it passes on the way
+  // out, turns around at WARD_RANGE, bites again on the way back, then re-docks.
+  const WARD_RANGE = 280;
+  function wardSlot(k, feet) {
+    const angle = game.wardAngle + (k / 3) * Math.PI * 2;
+    return { x: feet.x + Math.cos(angle) * 72, y: feet.y - 18 + Math.sin(angle) * 42 };
+  }
+  function wardSkullList() {
+    if (!game.wardSkulls) {
+      game.wardSkulls = [0, 1, 2].map((slot) => ({ slot, state: 'orbit', x: 0, y: 0, vx: 0, vy: 0, travelled: 0, spin: 0, hitSet: new Set() }));
+    }
+    return game.wardSkulls;
+  }
+  function throwWardSkull() {
+    if (!game.legendaries.has('ward')) return;
+    const skull = wardSkullList().find((s) => s.state === 'orbit');
+    if (!skull) return;
+    const { x: cx, y: cy } = center();
+    const start = wardSlot(skull.slot, { x: cx, y: cy + 16 });
+    const angle = game.aimAngle + rand(-0.08, 0.08);
+    Object.assign(skull, { state: 'out', x: start.x, y: start.y, vx: Math.cos(angle) * 480, vy: Math.sin(angle) * 480, travelled: 0, hitSet: new Set() });
+  }
+  function wardBite(z, skull, damage, family) {
+    damageZombie(z, damage, '#e8e0d0');
+    for (let i = 0; i < 4; i++) addParticle(skull.x, skull.y, rand(-60, 60), rand(-60, 60), 0.3, 2, '#e8e0d0');
+    if (z.dead) return;
+    if (family === 'hellfire') { z.igniteTimer = 2; z.igniteDps = game.stats.damage * 0.5 * (holyFire() ? 1.5 : 1); }
+    if (family === 'tempest') chainLightning(z, game.stats.damage * 0.6, 1, false);
+    if (family === 'frost') freezeZombie(z, 1);
+  }
+  // Bone Sentries: a thrown skull spits darts at up to 3 zombies when it turns around.
+  function sentryVolley(skull) {
+    const targeted = new Set();
+    for (let i = 0; i < 3; i++) {
+      const target = nearestHostile(skull.x, skull.y, 260, targeted);
+      if (!target) break;
+      targeted.add(target);
+      const th = zombieHitCenter(target);
+      const angle = Math.atan2(th.y - skull.y, th.x - skull.x);
+      game.arrows.push({
+        x: skull.x, y: skull.y, vx: Math.cos(angle) * 440, vy: Math.sin(angle) * 440, kind: 'shard', shard: true, dart: true,
+        damage: Math.max(1, Math.round(game.stats.damage * 0.8)), pierceLeft: 0, hitSet: new Set(), life: 0.7, dead: false,
+      });
+    }
+  }
+  function updateGraveWard(dt, feet) {
+    game.wardAngle += dt * 2.4;
+    const d = game.stats.damage;
+    const family = awakened('ward');
+    for (const skull of wardSkullList()) {
+      if (skull.state === 'orbit') {
+        Object.assign(skull, wardSlot(skull.slot, feet));
+        for (const z of game.zombies) {
+          if (z.dead || z.ally || z.wardCooldown > 0) continue;
+          const hc = zombieHitCenter(z);
+          if (Math.hypot(hc.x - skull.x, hc.y - skull.y) > z.radius + 12) continue;
+          z.wardCooldown = 0.5;
+          wardBite(z, skull, d * 1.2, family);
+        }
+        continue;
+      }
+      skull.spin += dt * 14;
+      if (skull.state === 'out') {
+        skull.x += skull.vx * dt; skull.y += skull.vy * dt;
+        skull.travelled += Math.hypot(skull.vx, skull.vy) * dt;
+        if (skull.travelled >= WARD_RANGE) {
+          skull.state = 'back';
+          skull.hitSet = new Set(); // it can bite the same zombies again on the way home
+          if (family === 'repeater') sentryVolley(skull);
+        }
+      } else {
+        const home = wardSlot(skull.slot, feet);
+        const dx = home.x - skull.x, dy = home.y - skull.y;
+        const distance = Math.hypot(dx, dy) || 1;
+        if (distance < 18) { skull.state = 'orbit'; continue; }
+        skull.x += (dx / distance) * 560 * dt; skull.y += (dy / distance) * 560 * dt;
+      }
+      for (const z of game.zombies) {
+        if (z.dead || z.ally || skull.hitSet.has(z)) continue;
+        const hc = zombieHitCenter(z);
+        if (Math.hypot(hc.x - skull.x, hc.y - skull.y) > z.radius + 12) continue;
+        skull.hitSet.add(z);
+        wardBite(z, skull, d * 1.5, family);
+      }
+    }
+  }
+
+  function phoenixAwakening(feet) {
+    const family = awakened('phoenix');
+    const d = game.stats.damage;
+    if (family === 'repeater') {
+      for (let i = 0; i < 30; i++) {
+        const angle = (i / 30) * Math.PI * 2;
+        game.arrows.push({
+          x: feet.x, y: feet.y - 20, vx: Math.cos(angle) * 520, vy: Math.sin(angle) * 520, kind: 'repeater', weapon: game.stats.weapon, spray: true,
+          damage: Math.round(d * 1.5), pierceLeft: 3, hitSet: new Set(), life: 2, shard: false, dead: false,
+        });
+      }
+    }
+    if (family === 'hellfire') {
+      for (let i = 0; i < 10; i++) {
+        const angle = (i / 10) * Math.PI * 2;
+        game.burns.push({ x: feet.x + Math.cos(angle) * 115, y: feet.y + Math.sin(angle) * 65, radius: 50, life: 8, maxLife: 8, dps: d * 1.2, seed: rand(0, 10), lava: true, holy: holyFire() });
+      }
+    }
+    if (family === 'tempest') { game.rebirthStorm = 6; game.rebirthStrikeTimer = 0; }
+    if (family === 'frost') game.frostNova = 5;
+  }
+
+  function checkBoon() {
+    if (!game.choosing && game.kills >= game.nextBoonAt) openBoonChoice();
+  }
+
+  // Tempest line's version of Bone-Burst: lightning forks from the impact into nearby zombies.
+  // One arc per shard; arcs with no zombie in reach crackle into empty ground.
+  function staticBurst(x, y, damage, sourceZombie) {
+    const count = 6 + (game.stats.shrapnel - 1) * 3;
+    const struck = new Set([sourceZombie]);
+    const infectious = awakened('plague') === 'tempest';
+    const arcColor = lightningColor('#bfe8ff');
+    let emptyForks = 0;
+    for (let i = 0; i < count; i++) {
+      const target = nearestHostile(x, y, 120, struck);
+      let endX, endY;
+      if (target) {
+        struck.add(target);
+        const hc = zombieHitCenter(target);
+        endX = hc.x; endY = hc.y;
+        damageZombie(target, shardDamage(damage) * lightningMult(), arcColor);
+        if (infectious) tryInfect(target, 0.1);
+      } else {
+        if (emptyForks++ >= 5) break;
+        const angle = rand(0, Math.PI * 2), reach = rand(30, 70);
+        endX = x + Math.cos(angle) * reach; endY = y + Math.sin(angle) * reach;
+      }
+      game.bolts.push({ points: jaggedPath(x, y, endX, endY, 5), life: 0.16, maxLife: 0.16, color: arcColor, width: 1.5 });
+    }
+  }
+
+  function burst(x, y, damage, sourceZombie) {
+    const count = 6 + (game.stats.shrapnel - 1) * 3;
+    const offset = rand(0, Math.PI * 2);
+    for (let i = 0; i < count; i++) {
+      const angle = offset + (i / count) * Math.PI * 2;
+      game.arrows.push({
+        x, y, vx: Math.cos(angle) * 380, vy: Math.sin(angle) * 380,
+        damage: shardDamage(damage), pierceLeft: 0, hitSet: new Set([sourceZombie]),
+        life: 0.38, shard: true, kind: 'shard', ember: familyOf(game.stats.weapon) === 'hellfire' || game.stats.weapon === 'infernoRepeater', dead: false,
+      });
+    }
+    for (let i = 0; i < 8; i++) addParticle(x, y, rand(-120, 120), rand(-120, 120), 0.3, 2, '#e9d8b4');
+  }
+
+  function addParticle(x, y, vx, vy, life, size, color) {
+    game.particles.push({ x, y, vx, vy, life, maxLife: life, size, color });
+  }
+
+  function zombieHitCenter(z) { return { x: z.x, y: z.y - z.radius * 1.5 }; }
+
+  function hitZombie(z, a) {
+    const s = game.stats;
+    const speed = Math.hypot(a.vx, a.vy) || 1;
+    const knock = a.shard || a.kind === 'soul' ? 35 : 90;
+    z.knockX += (a.vx / speed) * knock; z.knockY += (a.vy / speed) * knock;
+    const hc = zombieHitCenter(z);
+    for (let i = 0; i < 4; i++) addParticle(hc.x, hc.y, rand(-80, 80) + a.vx * 0.1, rand(-80, 80) + a.vy * 0.1, 0.4, 2.5, pick(['#4d6b3a', '#2d1f18', '#6b2a20']));
+    // A direct hit is a shot from the knight's weapon (not shards, souls, darts or sprays).
+    const direct = !a.shard && a.kind !== 'soul' && !a.spray && !a.dart && !a.mini;
+    const wasFrozen = z.frozenTimer > 0;
+    // Keen Edge: direct hits can crit for double damage.
+    const crit = direct && Math.random() < s.critChance;
+    const hitDamage = a.damage * (crit ? 2 : 1);
+    if (direct) sound.hit();
+    if (crit) {
+      sound.crit();
+      game.numbers.push({ x: hc.x + rand(-4, 4), y: hc.y - z.radius - 4, text: `${Math.round(hitDamage)}!`, life: 0.8, color: '#ffe14d', big: true });
+      for (let i = 0; i < 6; i++) addParticle(hc.x, hc.y, rand(-140, 140), rand(-140, 140), 0.3, 2, '#ffe14d');
+      damageZombie(z, hitDamage, null);
+    } else {
+      damageZombie(z, hitDamage, a.shard ? (a.ice ? '#bfe8ff' : '#e9d8b4') : a.kind === 'soul' ? '#cfe9f2' : a.overdraw ? '#ffe14d' : '#f2c14e');
+    }
+    // Executioner: direct hits finish off zombies below the threshold.
+    if (direct && s.executeThreshold && !z.dead && z.health <= z.maxHealth * s.executeThreshold) executeZombie(z);
+    // Chill from Rime Tips and frost weapons; freezes from Rime and the frost line.
+    if (!z.dead && a.kind !== 'soul' && !a.dart && (a.ice || s.rime || familyOf(s.weapon) === 'frost')) applyChill(z, chillAmount() || 0.3);
+    if (direct && !z.dead && Math.random() < freezeChance()) freezeZombie(z, 1);
+    if (direct && !z.dead && a.kind === 'frost') {
+      z.frostHits += 1;
+      if (z.frostHits >= 3) { z.frostHits = 0; freezeZombie(z, 1.2); }
+      if (a.weapon === 'glacier') freezeZombie(z, 1);
+      if (a.weapon === 'shatter' && wasFrozen) {
+        damageZombie(z, hitDamage, '#9fe4ff');
+        iceShards(a.x, a.y, hitDamage * 0.6, z, 8);
+      }
+    }
+    // Holy Fire (Consecrated on the Staff line): gold flames, +50% fire damage.
+    const holy = holyFire();
+    const fireMult = holy ? 1.5 : 1;
+    const fireStyle = holy ? 'holy' : 'fire';
+    if (direct && a.kind === 'equinox') {
+      if (a.element === 'fire' || a.element === 'both') {
+        if (wasFrozen) thermalShock(z, hitDamage, true);
+        else {
+          explode(a.x, a.y, 40, hitDamage * 0.6 * fireMult, z, fireStyle);
+          if (!z.dead) { z.igniteTimer = 2; z.igniteDps = hitDamage * 0.4 * fireMult; }
+        }
+      }
+      if ((a.element === 'frost' || a.element === 'both') && !z.dead) {
+        applyChill(z, 0.4);
+        if (Math.random() < 0.35) freezeZombie(z, 1.2);
+      }
+    }
+    if (a.kind === 'soul') {
+      const soulFamily = awakened('harvest');
+      if (soulFamily === 'hellfire') explode(a.x, a.y, 40, a.damage * 0.6 * fireMult, z, fireStyle);
+      if (soulFamily === 'tempest') chainLightning(z, a.damage * 0.6, 1, false);
+      if (soulFamily === 'frost') freezeZombie(z, 1.2);
+    }
+    if (a.mini) {
+      explode(a.x, a.y, 32, a.damage * fireMult, z, fireStyle);
+    } else if (direct && !a.icicle) {
+      if (a.kind === 'hellfire') {
+        explode(a.x, a.y, blastRadius(), a.damage * fireMult, z, fireStyle);
+        if (a.weapon === 'cataclysm') {
+          game.burns.push({ x: a.x, y: a.y + 12, radius: lavaRadius(), life: lavaLife(), maxLife: lavaLife(), dps: a.damage * fireMult, seed: rand(0, 10), lava: true, holy });
+        } else {
+          game.burns.push({ x: a.x, y: a.y + 12, radius: 40 + s.shrapnel * 6, life: 2, maxLife: 2, dps: a.damage * 0.6 * fireMult, seed: rand(0, 10), holy });
+        }
+        if (a.weapon === 'meteor') splitFireball(a, z);
+        if (a.weapon === 'plasma') plasmaArcs(a.x, a.y, a.damage, z);
+      }
+      if (a.kind === 'tempest') chainLightning(z, a.damage * 0.75, tempestJumps(), a.weapon === 'thunderclap');
+      if (a.weapon === 'thunderRepeater') chainLightning(z, a.damage * 0.6, thunderJumps(), false);
+      if (a.weapon === 'infernoRepeater') {
+        if (!z.dead) { z.igniteTimer = 3; z.igniteDps = a.damage * 0.5; }
+        explode(a.x, a.y, 35, a.damage * 0.5, z, 'fire');
+      }
+      if (s.shrapnel > 0) {
+        if (a.kind === 'tempest') staticBurst(a.x, a.y, a.damage, z);
+        else if (a.kind === 'frost') iceShards(a.x, a.y, shardDamage(a.damage), z, 6 + (s.shrapnel - 1) * 3);
+        else burst(a.x, a.y, a.damage, z);
+      }
+    }
+    rollLegendaryProcs(z, a);
+    if (a.pierceLeft > 0) a.pierceLeft -= 1; else a.dead = true;
+  }
+
+  function killZombie(z) {
+    if (z.dead) return;
+    z.dead = true;
+    if (z.ally) return;
+    sound.kill();
+    game.kills += 1;
+    game.splats.push({ x: z.x, y: z.y - 2, rx: z.radius * rand(0.9, 1.4), ry: z.radius * rand(0.4, 0.6), rot: rand(-0.3, 0.3), color: pick(['rgba(58,22,16,0.6)', 'rgba(40,52,28,0.55)', 'rgba(30,20,14,0.6)']) });
+    if (game.splats.length > 160) game.splats.shift();
+    for (let i = 0; i < 14; i++) addParticle(z.x, z.y - z.radius, rand(-140, 140), rand(-160, 60), rand(0.4, 0.8), rand(2, 4), pick(['#4d6b3a', '#3a2a1e', '#7d2a20', '#5b5a3a']));
+    if (game.legendaries.has('harvest')) {
+      spawnSoul(zombieHitCenter(z));
+      if (awakened('harvest') === 'repeater') spawnSoul(zombieHitCenter(z));
+    }
+    // Vampiric Tips
+    if (game.stats.vampire) game.health = Math.min(game.stats.maxHealth, game.health + game.stats.vampire);
+    checkBoon();
+  }
+
+  /* ---------- Update ---------- */
+  function updateEmbers(dt) {
+    while (embers.length < 45) embers.push({ x: rand(0, viewWidth), y: viewHeight + rand(0, viewHeight), vx: rand(-10, 10), vy: rand(-28, -12), flicker: rand(0, 6), size: rand(0.8, 2) });
+    for (const e of embers) {
+      e.x += (e.vx + Math.sin(e.flicker) * 8) * dt; e.y += e.vy * dt; e.flicker += dt * 3;
+      if (e.y < -10) { e.y = viewHeight + 10; e.x = rand(0, viewWidth); }
+    }
+  }
+
+  function update(dt) {
+    const { x: cx, y: cy } = center();
+    const target = { x: cx, y: cy + 16 };
+    game.time += dt;
+    game.waveTimer += dt;
+    if (game.waveTimer >= WAVE_LENGTH) {
+      game.waveTimer = 0; game.wave += 1;
+      const earnedReroll = game.wave % 5 === 0 && game.rerolls < MAX_REROLLS;
+      if (earnedReroll) game.rerolls += 1;
+      if (game.wave === MUTANT_WAVE) showBanner('Mutations', 'Pale, spiked zombies shrug off plague and barely budge. Focus them down.');
+      else if (game.wave === REVENANT_WAVE) showBanner('Revenants', 'Masked, burning dead. Plague and necromancy can’t touch them, but frost still slows them.');
+      else showBanner(`Wave ${game.wave}`, earnedReroll ? 'You earned a boon re-roll.' : pick(SURGE_LINES));
+      sound.surge();
+      updateStatsPanel();
+    }
+
+    const settings = waveSettings(game.wave);
+    game.spawnTimer -= dt;
+    if (game.spawnTimer <= 0) {
+      for (let i = 0; i < settings.batch; i++) spawnZombie(settings);
+      game.spawnTimer = settings.spawnEvery * rand(0.7, 1.3);
+    }
+
+    if (pointer.hasPosition) {
+      const origin = bowOrigin();
+      game.aimAngle = Math.atan2(pointer.y - origin.y, pointer.x - origin.x);
+    }
+    game.cooldown -= dt;
+    if ((pointer.held || pointer.queued) && game.cooldown <= 0) {
+      fire(); pointer.queued = false; game.cooldown = game.stats.fireCooldown;
+    }
+
+    for (const z of game.zombies) {
+      if (z.dead) continue;
+      let goal = target, contactRange = z.radius + 16, moveSpeed = z.speed, foe = null;
+      if (z.ally) {
+        z.health -= z.allyDecay * dt;
+        if (z.health <= 0) {
+          z.dead = true;
+          for (let i = 0; i < 10; i++) addParticle(z.x, z.y - z.radius, rand(-60, 60), rand(-90, 20), 0.6, 3, pick(['#9a7bb8', '#4b2f63', '#3a2a1e']));
+          continue;
+        }
+        foe = nearestHostile(z.x, z.y);
+        goal = foe || z;
+        contactRange = foe ? z.radius + foe.radius + 2 : 0;
+        moveSpeed = z.speed * 1.5 + 20;
+        updateThrallAwakening(z, dt);
+      }
+      const dx = goal.x - z.x, dy = goal.y - z.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      // Frozen zombies stand still and can't bite; chilled ones walk slower.
+      const frozen = !z.ally && z.frozenTimer > 0;
+      if (!z.ally && z.chillTimer > 0) moveSpeed *= 1 - z.chill;
+      z.attacking = !frozen && (!z.ally || !!foe) && distance < contactRange;
+      if (!frozen && Math.abs(dx) > 2) z.facing = dx > 0 ? 1 : -1;
+      if (z.attacking) {
+        z.walkPhase += dt * 10;
+        if (z.ally) {
+          dotDamage(foe, (6 + game.stats.damage * 1.5) * dt, '#c9a2e8', null);
+          if (awakened('thrall') === 'hellfire' && !foe.dead) { foe.igniteTimer = 2; foe.igniteDps = game.stats.damage * 0.5; }
+          if (awakened('thrall') === 'frost' && !foe.dead) {
+            applyChill(foe, 0.5, 0.5);
+            if (Math.random() < dt * 0.8) freezeZombie(foe, 1);
+          }
+        }
+        else { game.health -= z.biteDps * dt; game.shake = Math.max(game.shake, 3); sound.hurt(); }
+      } else if (!frozen && (!z.ally || foe)) {
+        z.x += (dx / distance) * moveSpeed * dt;
+        z.y += (dy / distance) * moveSpeed * dt;
+        z.walkPhase += dt * (4 + moveSpeed * 0.08);
+      }
+      if (z.infectTimer != null) {
+        z.infectTimer -= dt;
+        if (z.infectTimer <= 0) { plagueBurst(z); continue; }
+      }
+      const knockScale = z.revenant ? 0.25 : z.mutant ? 0.5 : 1; // mutants barely budge, revenants hardly at all
+      z.x += z.knockX * knockScale * dt; z.y += z.knockY * knockScale * dt;
+      const decay = Math.min(1, dt * 8);
+      z.knockX -= z.knockX * decay; z.knockY -= z.knockY * decay;
+      z.hitFlash = Math.max(0, z.hitFlash - dt);
+      z.frozenTimer = Math.max(0, z.frozenTimer - dt);
+      z.chillTimer = Math.max(0, z.chillTimer - dt);
+      z.wardCooldown = Math.max(0, z.wardCooldown - dt);
+      if (game.frostNova > 0 && !z.ally) z.frozenTimer = Math.max(z.frozenTimer, 0.2);
+      if (z.igniteTimer > 0) {
+        z.igniteTimer -= dt;
+        dotDamage(z, z.igniteDps * dt, '#ffb347', 'fire');
+      }
+      if (z.burning > 0) {
+        if (awakened('plague') === 'hellfire' && Math.random() < 0.15 * dt) tryInfect(z, 1);
+        z.burning = Math.max(0, z.burning - dt);
+        if (Math.random() < dt * 10) addParticle(z.x + rand(-8, 8), z.y - z.radius * 2.2, rand(-15, 15), rand(-70, -40), 0.5, 2, z.burnStyle === 'holy' ? '#fff1c0' : '#ffb347');
+      }
+      z.dotTimer += dt;
+      if (z.dotTimer >= 0.5) {
+        if (z.dotStored >= 1) {
+          const hc = zombieHitCenter(z);
+          game.numbers.push({ x: hc.x + rand(-6, 6), y: hc.y - z.radius, text: String(Math.round(z.dotStored)), life: 0.7, color: z.dotColor });
+        }
+        z.dotStored = 0; z.dotTimer = 0;
+      }
+    }
+
+    if (game.legendaries.has('consecrated')) {
+      game.auraSpin += dt;
+      const radius = auraRadius();
+      const hallowedFrost = awakened('consecrated') === 'frost';
+      for (const z of game.zombies) {
+        if (z.dead || z.ally) continue;
+        if (Math.hypot(z.x - target.x, (z.y - target.y) / 0.55) >= radius) continue;
+        // Hallowed Frost: the ring chills, and frozen zombies burn twice as fast.
+        const frozenBonus = hallowedFrost && z.frozenTimer > 0 ? 2 : 1;
+        dotDamage(z, auraDps() * frozenBonus * dt, '#f0c35a', 'holy');
+        if (hallowedFrost) applyChill(z, 0.4, 0.3);
+      }
+    }
+    if (game.frostNova > 0) game.frostNova -= dt;
+    if (game.legendaries.has('ward')) updateGraveWard(dt, target);
+    if (game.stats.weapon === 'hailstorm' && pointer.hasPosition) {
+      // Hailstorm: hailstones fall around the aim point on their own.
+      game.hailTimer -= dt;
+      if (game.hailTimer <= 0) {
+        game.hailTimer = hailInterval();
+        const angle = rand(0, Math.PI * 2), reach = rand(0, 75);
+        const hx = pointer.x + Math.cos(angle) * reach, hy = pointer.y + Math.sin(angle) * reach * 0.6;
+        game.bolts.push({ points: [[hx + 18, hy - 150], [hx, hy]], life: 0.12, maxLife: 0.12, color: '#dfefff', width: 2.5 });
+        explode(hx, hy, 32, game.stats.damage * 0.6, null, 'ice', (z) => applyChill(z, Math.max(chillAmount(), 0.35)));
+      }
+    }
+    if (game.stats.weapon === 'eye' && game.stormCloud) {
+      const cloud = game.stormCloud;
+      const goalX = pointer.hasPosition ? pointer.x : cx;
+      const goalY = (pointer.hasPosition ? pointer.y : cy) - 70;
+      const follow = Math.min(1, dt * 3);
+      cloud.x += (goalX - cloud.x) * follow; cloud.y += (goalY - cloud.y) * follow;
+      cloud.timer -= dt;
+      if (cloud.timer <= 0) {
+        const target = nearestHostile(cloud.x, cloud.y + 70, 150);
+        cloud.timer = target ? stormInterval() : 0.15;
+        if (target) {
+          const hc = zombieHitCenter(target);
+          game.bolts.push({ points: jaggedPath(cloud.x, cloud.y + 8, hc.x, hc.y, 8), life: 0.22, maxLife: 0.22, color: lightningColor('#dde6ff'), width: 3 });
+          damageZombie(target, game.stats.damage * 2 * lightningMult(), lightningColor('#9fb4ff'));
+          explode(hc.x, hc.y, 40, game.stats.damage * 0.75 * lightningMult(), target, radiantLightning() ? 'holy' : 'spark');
+          addStrikeGlow(hc.x, hc.y);
+        }
+      }
+    }
+    if (game.rebirthStorm > 0) {
+      // Storm Rebirth: lightning keeps falling on the horde for a few seconds after reviving.
+      game.rebirthStorm -= dt;
+      game.rebirthStrikeTimer -= dt;
+      if (game.rebirthStrikeTimer <= 0) {
+        game.rebirthStrikeTimer = 0.3;
+        const hostiles = game.zombies.filter((z) => !z.dead && !z.ally);
+        if (hostiles.length) lightningStrike(pick(hostiles), false);
+      }
+    }
+    for (const b of game.burns) {
+      b.life -= dt;
+      for (const z of game.zombies) {
+        if (z.dead || z.ally) continue;
+        if (Math.hypot(z.x - b.x, (z.y - b.y) / 0.55) < b.radius) dotDamage(z, b.dps * dt, b.holy ? '#f0c35a' : '#ffb347', b.holy ? 'holy' : 'fire');
+      }
+    }
+
+    for (const a of game.arrows) {
+      if (a.homing) {
+        const foe = nearestHostile(a.x, a.y, 700);
+        if (foe) {
+          const hc = zombieHitCenter(foe);
+          let heading = Math.atan2(a.vy, a.vx);
+          const desired = Math.atan2(hc.y - a.y, hc.x - a.x);
+          const diff = Math.atan2(Math.sin(desired - heading), Math.cos(desired - heading));
+          heading += clamp(diff, -7 * dt, 7 * dt);
+          const soulSpeed = Math.min(380, Math.hypot(a.vx, a.vy) + 400 * dt);
+          a.vx = Math.cos(heading) * soulSpeed; a.vy = Math.sin(heading) * soulSpeed;
+        }
+      }
+      a.x += a.vx * dt; a.y += a.vy * dt; a.life -= dt;
+      if (a.weapon === 'codex' && a.kind === 'tempest') {
+        a.zapTimer -= dt;
+        if (a.zapTimer <= 0) {
+          a.zapTimer = 0.25;
+          const target = nearestHostile(a.x, a.y, 85, a.hitSet);
+          if (target) {
+            const hc = zombieHitCenter(target);
+            game.bolts.push({ points: jaggedPath(a.x, a.y, hc.x, hc.y, 5), life: 0.12, maxLife: 0.12, color: lightningColor('#b8f0ff'), width: 1.5 });
+            damageZombie(target, a.damage * 0.35 * lightningMult(), lightningColor('#b8f0ff'));
+          }
+        }
+      }
+      if (a.life <= 0 || a.x < -60 || a.y < -60 || a.x > viewWidth + 60 || a.y > viewHeight + 60) { a.dead = true; continue; }
+      for (const z of game.zombies) {
+        if (z.dead || z.ally || a.hitSet.has(z)) continue;
+        const hc = zombieHitCenter(z);
+        if (Math.hypot(a.x - hc.x, a.y - hc.y) < z.radius * 1.25 + (a.shard ? 2 : 4)) {
+          a.hitSet.add(z);
+          hitZombie(z, a);
+          if (a.dead) break;
+        }
+      }
+    }
+
+    for (const p of game.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; p.life -= dt; }
+    for (const n of game.numbers) { n.y -= 30 * dt; n.life -= dt; }
+
+    game.zombies = game.zombies.filter((z) => !z.dead);
+    game.arrows = game.arrows.filter((a) => !a.dead);
+    game.particles = game.particles.filter((p) => p.life > 0);
+    game.numbers = game.numbers.filter((n) => n.life > 0);
+    for (const b of game.blasts) b.life -= dt;
+    for (const b of game.bolts) b.life -= dt;
+    for (const g of game.glows) g.life -= dt;
+    game.glows = game.glows.filter((g) => g.life > 0);
+    game.blasts = game.blasts.filter((b) => b.life > 0);
+    game.bolts = game.bolts.filter((b) => b.life > 0);
+    game.burns = game.burns.filter((b) => b.life > 0);
+    game.shake = Math.max(0, game.shake - dt * 12);
+    game.flash = Math.max(0, game.flash - dt);
+    game.evolveFlash = Math.max(0, game.evolveFlash - dt * 1.5);
+
+    if (game.health <= 0) {
+      if (game.legendaries.has('phoenix') && !game.phoenixUsed) {
+        game.phoenixUsed = true;
+        game.health = game.stats.maxHealth;
+        for (const z of game.zombies) if (!z.dead && !z.ally) killZombie(z);
+        game.blasts.push({ x: cx, y: cy, radius: Math.max(viewWidth, viewHeight), life: 0.8, maxLife: 0.8, color: '#ffb347' });
+        game.flash = 0.5;
+        phoenixAwakening(target);
+        showBanner('Phoenix Plume', 'You rise from the ash.');
+        sound.phoenix();
+        updateStatsPanel();
+      } else { game.health = 0; endGame(); }
+    }
+  }
+
+  function updateHud() {
+    const s = game.stats;
+    ui.waveValue.textContent = game.wave;
+    ui.killsValue.textContent = game.kills;
+    const boonSpan = game.nextBoonAt - game.lastBoonAt;
+    const boonProgress = clamp((game.kills - game.lastBoonAt) / boonSpan, 0, 1);
+    ui.boonFill.style.width = `${boonProgress * 100}%`;
+    ui.boonCaption.textContent = `${game.kills - game.lastBoonAt} / ${boonSpan} kills`;
+    ui.healthFill.style.width = `${(game.health / s.maxHealth) * 100}%`;
+    ui.healthCaption.textContent = `${Math.ceil(game.health)} / ${s.maxHealth}`;
+    ui.surgeFill.style.width = `${(game.waveTimer / WAVE_LENGTH) * 100}%`;
+    ui.surgeCaption.textContent = `${Math.ceil(WAVE_LENGTH - game.waveTimer)}s`;
+  }
+
+  /* ---------- Rendering ---------- */
+  function roundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+  }
+
+  function drawKnight() {
+    const { x: cx, y: cy } = center();
+    const aim = game ? game.aimAngle : -Math.PI / 2;
+    const facing = Math.cos(aim) >= 0 ? 1 : -1;
+
+    ctx.save(); ctx.translate(cx, cy);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.ellipse(0, 20, 18, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // cape
+    ctx.fillStyle = '#6e1d1a';
+    ctx.beginPath(); ctx.moveTo(-8, -8); ctx.lineTo(8, -8); ctx.lineTo(10 - 4 * facing, 16); ctx.lineTo(-10 - 4 * facing, 16); ctx.closePath(); ctx.fill();
+    // legs and boots
+    ctx.fillStyle = '#4b4f57'; ctx.fillRect(-7, 6, 5, 11); ctx.fillRect(2, 6, 5, 11);
+    ctx.fillStyle = '#2a2420'; ctx.fillRect(-8, 15, 6, 4); ctx.fillRect(2, 15, 6, 4);
+    // torso
+    roundedRect(-10, -10, 20, 18, 4); ctx.fillStyle = '#8f96a0'; ctx.fill();
+    ctx.fillStyle = '#8c2420'; ctx.fillRect(-5, -8, 10, 16);
+    ctx.fillStyle = '#d9b45a'; ctx.fillRect(-1, -6, 2, 8); ctx.fillRect(-3, -4, 6, 2);
+    ctx.fillStyle = '#3b2a1c'; ctx.fillRect(-10, 4, 20, 3);
+    ctx.fillStyle = '#7b828c';
+    ctx.beginPath(); ctx.arc(-10, -7, 4.5, 0, Math.PI * 2); ctx.arc(10, -7, 4.5, 0, Math.PI * 2); ctx.fill();
+    // helm
+    roundedRect(-8, -28, 16, 18, 4); ctx.fillStyle = '#aab1ba'; ctx.fill();
+    ctx.fillStyle = '#868d97'; ctx.fillRect(facing > 0 ? -8 : 4, -26, 4, 15);
+    ctx.fillStyle = '#121212'; ctx.fillRect(facing > 0 ? -1 : -7, -21, 8, 2.5);
+    ctx.strokeStyle = '#b8302a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -28); ctx.bezierCurveTo(-6 * facing, -36, -13 * facing, -34, -15 * facing, -22); ctx.stroke();
+    ctx.restore();
+
+    const readiness = game ? 1 - clamp(game.cooldown / game.stats.fireCooldown, 0, 1) : 1;
+    const weaponId = game ? game.stats.weapon : 'bow';
+    const weapon = familyOf(weaponId);
+    const accent = WEAPONS[weaponId].accent;
+    const origin = bowOrigin();
+    ctx.save(); ctx.translate(origin.x, origin.y); ctx.rotate(aim);
+    ctx.lineCap = 'round';
+    if (accent) {
+      // Tier-2 weapons carry a colored aura so the evolution reads at a glance.
+      const pulse = 22 + Math.sin(performance.now() / 200) * 3;
+      const aura = ctx.createRadialGradient(16, 0, 0, 16, 0, pulse);
+      aura.addColorStop(0, `${accent}88`); aura.addColorStop(1, `${accent}00`);
+      ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(16, 0, pulse, 0, Math.PI * 2); ctx.fill();
+    }
+    if (game && game.stats.overdrawEvery && (game.shotCount + 1) % game.stats.overdrawEvery === 0) {
+      // Overdraw is charged: the next shot deals triple damage.
+      const pulse = 16 + Math.sin(performance.now() / 90) * 4;
+      const charge = ctx.createRadialGradient(18, 0, 0, 18, 0, pulse);
+      charge.addColorStop(0, 'rgba(255,225,77,0.85)'); charge.addColorStop(1, 'rgba(255,225,77,0)');
+      ctx.fillStyle = charge; ctx.beginPath(); ctx.arc(18, 0, pulse, 0, Math.PI * 2); ctx.fill();
+    }
+    if (weapon === 'frost') {
+      // Frost Scepter: silver rod with a glowing ice crystal.
+      ctx.strokeStyle = '#c9d3dc'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(20, 0); ctx.stroke();
+      ctx.strokeStyle = '#7f8c99'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(18, -5); ctx.lineTo(21, 0); ctx.lineTo(18, 5); ctx.stroke();
+      const glowSize = 12 + readiness * 8;
+      const glow = ctx.createRadialGradient(27, 0, 0, 27, 0, glowSize);
+      glow.addColorStop(0, 'rgba(190,235,255,0.85)'); glow.addColorStop(1, 'rgba(120,200,255,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(27, 0, glowSize, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e8f8ff'; ctx.strokeStyle = '#7fc8ff'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(35, 0); ctx.lineTo(27, -6); ctx.lineTo(21, 0); ctx.lineTo(27, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(21, 0); ctx.lineTo(35, 0); ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    if (weapon === 'equinox') {
+      // Equinox Staff: a fire orb and a frost orb circling the head of the staff.
+      ctx.strokeStyle = '#4a3326'; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(22, 0); ctx.stroke();
+      ctx.strokeStyle = '#c9a46a'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(27, 0, 6, 0, Math.PI * 2); ctx.stroke();
+      const spin = performance.now() / 300;
+      const orbs = [['rgba(255,170,80,0.9)', 'rgba(255,90,31,0)', '#ffe1a0'], ['rgba(170,225,255,0.9)', 'rgba(90,170,255,0)', '#ffffff']];
+      orbs.forEach(([inner, outer, core], k) => {
+        const ox = 27 + Math.cos(spin + k * Math.PI) * 9, oy = Math.sin(spin + k * Math.PI) * 9;
+        const glow = ctx.createRadialGradient(ox, oy, 0, ox, oy, 9 + readiness * 3);
+        glow.addColorStop(0, inner); glow.addColorStop(1, outer);
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ox, oy, 9 + readiness * 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = core; ctx.beginPath(); ctx.arc(ox, oy, 2.8, 0, Math.PI * 2); ctx.fill();
+      });
+      ctx.restore();
+      return;
+    }
+    if (weapon === 'repeater') {
+      ctx.fillStyle = '#3d2a1a'; ctx.fillRect(-4, -2.5, 26, 5);
+      ctx.fillStyle = '#6e7781'; ctx.fillRect(4, -5, 10, 10);
+      ctx.fillStyle = '#9fb4c8'; ctx.fillRect(6, -7, 6, 2);
+      ctx.strokeStyle = '#4a5a6a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(21, -14); ctx.quadraticCurveTo(15, 0, 21, 14); ctx.stroke();
+      ctx.strokeStyle = '#ddd3c0'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(21, -14); ctx.lineTo(14 - readiness * 3, 0); ctx.lineTo(21, 14); ctx.stroke();
+      if (readiness > 0.5) { ctx.strokeStyle = '#9fb4c8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(28, 0); ctx.stroke(); }
+      ctx.restore();
+      return;
+    }
+    if (weapon === 'hellfire') {
+      ctx.strokeStyle = '#3a2414'; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(22, 0); ctx.stroke();
+      ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(26, 0, 7, 2.2, 4.1); ctx.stroke();
+      ctx.beginPath(); ctx.arc(26, 0, 7, -0.9, 0.9, true); ctx.stroke();
+      const glowSize = 8 + readiness * 6 + Math.sin(performance.now() / 120) * 1.5;
+      const glow = ctx.createRadialGradient(26, 0, 0, 26, 0, glowSize * 1.8);
+      glow.addColorStop(0, 'rgba(255,200,110,0.9)'); glow.addColorStop(1, 'rgba(255,90,31,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(26, 0, glowSize * 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffe1a0'; ctx.beginPath(); ctx.arc(26, 0, 3 + readiness * 2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      return;
+    }
+    if (weapon === 'tempest') {
+      drawSpellbook(aim, readiness, accent || '#8fd3ff');
+      ctx.restore();
+      return;
+    }
+    ctx.strokeStyle = '#5a3a1e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(6, 0, 15, -1.15, 1.15); ctx.stroke();
+    const tipX = 6 + 15 * Math.cos(1.15), tipY = 15 * Math.sin(1.15);
+    const pullX = tipX - 3 - readiness * 9;
+    ctx.strokeStyle = '#ddd3c0'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(tipX, -tipY); ctx.lineTo(pullX, 0); ctx.lineTo(tipX, tipY); ctx.stroke();
+    if (readiness > 0.6) {
+      ctx.strokeStyle = '#c9a46a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(pullX, 0); ctx.lineTo(pullX + 24, 0); ctx.stroke();
+      ctx.fillStyle = '#d9dde2';
+      ctx.beginPath(); ctx.moveTo(pullX + 29, 0); ctx.lineTo(pullX + 23, -3); ctx.lineTo(pullX + 23, 3); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#6d737c'; ctx.beginPath(); ctx.arc(pullX, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Open spellbook hovering in front of the knight on the side he's aiming, with a sigil casting above it.
+  // Called inside drawKnight's transform (origin at the knight's hands, rotated to the aim).
+  function drawSpellbook(aim, readiness, glowColor) {
+    const t = performance.now();
+    const facing = Math.cos(aim) >= 0 ? 1 : -1;
+    ctx.rotate(-aim); // back to screen space so the book stays upright
+    ctx.translate(Math.cos(aim) * 17, Math.sin(aim) * 9 - 7 + Math.sin(t / 260) * 2);
+    const alphaHex = (a) => Math.round(clamp(a, 0, 1) * 255).toString(16).padStart(2, '0');
+
+    // casting glow
+    const glow = ctx.createRadialGradient(0, -6, 0, 0, -6, 28);
+    glow.addColorStop(0, `${glowColor}${alphaHex(0.25 + readiness * 0.4)}`); glow.addColorStop(1, `${glowColor}00`);
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -6, 28, 0, Math.PI * 2); ctx.fill();
+
+    ctx.save();
+    ctx.rotate(facing * 0.14);
+    // leather cover, slightly larger than the pages
+    ctx.beginPath();
+    ctx.moveTo(-18, -3); ctx.quadraticCurveTo(-9, -9, 0, -4.5); ctx.quadraticCurveTo(9, -9, 18, -3);
+    ctx.lineTo(17, 7); ctx.quadraticCurveTo(8, 2.5, 0, 7.5); ctx.quadraticCurveTo(-8, 2.5, -17, 7); ctx.closePath();
+    ctx.fillStyle = '#3b2238'; ctx.fill();
+    ctx.strokeStyle = '#b8913a'; ctx.lineWidth = 1; ctx.stroke();
+    // left page
+    ctx.beginPath();
+    ctx.moveTo(-15.5, -3.5); ctx.quadraticCurveTo(-8, -9, -0.6, -5); ctx.lineTo(-0.6, 5.5); ctx.quadraticCurveTo(-8, 1, -15.5, 4.5); ctx.closePath();
+    ctx.fillStyle = '#efe6cf'; ctx.fill();
+    // right page, a shade darker
+    ctx.beginPath();
+    ctx.moveTo(15.5, -3.5); ctx.quadraticCurveTo(8, -9, 0.6, -5); ctx.lineTo(0.6, 5.5); ctx.quadraticCurveTo(8, 1, 15.5, 4.5); ctx.closePath();
+    ctx.fillStyle = '#e3d7bb'; ctx.fill();
+    // spine shadow
+    ctx.strokeStyle = 'rgba(70,45,25,0.55)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, 6); ctx.stroke();
+    // script lines on the left page
+    ctx.strokeStyle = 'rgba(70,50,40,0.5)'; ctx.lineWidth = 0.8;
+    for (let i = 0; i < 4; i++) {
+      const y = -3.2 + i * 2.3;
+      ctx.beginPath(); ctx.moveTo(-13.5, y + 1.2); ctx.quadraticCurveTo(-8, y - 1.6, -2.5, y + 0.4); ctx.stroke();
+    }
+    // glowing rune circle on the right page
+    ctx.strokeStyle = glowColor; ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6 + readiness * 0.4;
+    ctx.beginPath(); ctx.ellipse(8, 0, 3.6, 2.6, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, -1.4); ctx.lineTo(9, 0); ctx.lineTo(7, 0.2); ctx.lineTo(10, 1.6); ctx.stroke();
+    ctx.globalAlpha = 1;
+    // a loose page lifting off the right side
+    const flutter = Math.sin(t / 330) * 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0.6, -5); ctx.quadraticCurveTo(7, -11 - flutter, 13.5, -6 - flutter); ctx.lineTo(13, -4 - flutter * 0.6); ctx.quadraticCurveTo(7, -8 - flutter * 0.6, 0.6, -3.5); ctx.closePath();
+    ctx.fillStyle = 'rgba(248,242,226,0.85)'; ctx.fill();
+    ctx.restore();
+
+    // rotating sigil above the pages, brighter as the next cast charges
+    ctx.save();
+    ctx.translate(0, -17);
+    ctx.globalAlpha = 0.35 + readiness * 0.65;
+    ctx.strokeStyle = glowColor; ctx.lineWidth = 1.2;
+    ctx.rotate(t / 700);
+    ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      ctx.rotate((Math.PI * 2) / 3);
+      ctx.beginPath(); ctx.moveTo(0, -6.5); ctx.lineTo(2.2, -2.4); ctx.lineTo(-2.2, -2.4); ctx.closePath(); ctx.stroke();
+    }
+    ctx.restore();
+
+    // sparks drifting up off the pages
+    for (let k = 0; k < 5; k++) {
+      const phase = (t / 650 + k / 5) % 1;
+      ctx.globalAlpha = (1 - phase) * 0.9;
+      ctx.fillStyle = k % 2 ? '#ffffff' : glowColor;
+      ctx.fillRect(Math.sin(k * 2.3 + t / 300) * 9 - 1, -4 - phase * 22, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawZombie(z) {
+    const facing = z.facing || 1;
+    const swell = z.infectTimer != null ? 1 + (1.5 - z.infectTimer) * 0.2 + Math.sin(performance.now() / 40) * 0.03 : 1;
+    const scale = (z.radius / 14) * swell;
+    const bob = Math.abs(Math.sin(z.walkPhase)) * 2;
+    const step = Math.sin(z.walkPhase) * 4;
+    const lunge = z.attacking ? Math.sin(z.walkPhase * 1.5) * 3 : 0;
+    const skin = z.ally ? '#9a7bb8' : z.skin;
+
+    ctx.save(); ctx.translate(z.x, z.y); ctx.scale(scale, scale);
+    if (z.infectTimer != null) {
+      const glow = ctx.createRadialGradient(0, -24, 0, 0, -24, 26);
+      glow.addColorStop(0, 'rgba(160,210,70,0.55)'); glow.addColorStop(1, 'rgba(160,210,70,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -24, 26, 0, Math.PI * 2); ctx.fill();
+    }
+    if (z.ally) {
+      const glow = ctx.createRadialGradient(0, -24, 0, 0, -24, 24);
+      glow.addColorStop(0, 'rgba(111,242,255,0.25)'); glow.addColorStop(1, 'rgba(111,242,255,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -24, 24, 0, Math.PI * 2); ctx.fill();
+    }
+    const mutant = z.mutant && !z.ally;
+    const revenant = z.revenant && !z.ally;
+    if (revenant) {
+      const pulse = 0.3 + Math.sin(performance.now() / 320 + z.seed) * 0.1;
+      const glow = ctx.createRadialGradient(0, -24, 0, 0, -24, 30);
+      glow.addColorStop(0, `rgba(160,20,30,${pulse})`); glow.addColorStop(1, 'rgba(160,20,30,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -24, 30, 0, Math.PI * 2); ctx.fill();
+    }
+    if (mutant) {
+      // A slow sickly pulse so mutants read as a threat in a crowd.
+      const pulse = 0.25 + Math.sin(performance.now() / 260 + z.seed) * 0.1;
+      const glow = ctx.createRadialGradient(0, -24, 0, 0, -24, 28);
+      glow.addColorStop(0, `rgba(200,60,140,${pulse})`); glow.addColorStop(1, 'rgba(200,60,140,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -24, 28, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(0, 1, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2f3326';
+    ctx.fillRect(-6 + step * 0.5, -12, 5, 12); ctx.fillRect(1 - step * 0.5, -12, 5, 12);
+    ctx.translate(0, -bob);
+    // far arm
+    ctx.fillStyle = shade(skin);
+    ctx.fillRect(0, -28, (15 + lunge) * facing, 4);
+    // torso
+    roundedRect(-8, -30, 16, 19, 3); ctx.fillStyle = z.shirt; ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.moveTo(-8, -11); ctx.lineTo(-5, -15); ctx.lineTo(-2, -11); ctx.lineTo(2, -14); ctx.lineTo(5, -11); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(110,30,20,0.55)'; ctx.fillRect(-3, -24, 5, 4);
+    if (z.brute) { ctx.fillStyle = '#5a5a5a'; ctx.fillRect(-9, -31, 18, 4); }
+    if (mutant) {
+      // Bone spikes along the back and swollen red pustules.
+      ctx.fillStyle = '#e2d8c4';
+      for (const [y, len] of [[-29, 6], [-23, 7], [-17, 5]]) {
+        ctx.beginPath(); ctx.moveTo(-7 * facing, y); ctx.lineTo((-7 - len) * facing, y - 2); ctx.lineTo(-7 * facing, y + 3); ctx.closePath(); ctx.fill();
+      }
+      for (const [px, py, r] of [[-3, -26, 2], [3, -19, 1.7], [5, -27, 1.4]]) {
+        ctx.fillStyle = '#c43a5a'; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff9fb4'; ctx.beginPath(); ctx.arc(px - r * 0.3, py - r * 0.3, r * 0.35, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    if (revenant) {
+      // Glowing ember cracks running through blackened flesh.
+      const flicker = 0.6 + Math.sin(performance.now() / 120 + z.seed) * 0.25;
+      ctx.strokeStyle = `rgba(255,90,58,${flicker})`; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-5, -28); ctx.lineTo(-2, -23); ctx.lineTo(-4, -18); ctx.lineTo(-1, -13);
+      ctx.moveTo(4, -27); ctx.lineTo(2, -22); ctx.lineTo(5, -17);
+      ctx.stroke();
+      // Tattered hood behind the head.
+      ctx.fillStyle = '#1e1719';
+      ctx.beginPath(); ctx.arc(-1 * facing, -38, 9, Math.PI * 0.9, Math.PI * 2.1); ctx.fill();
+    }
+    // head
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(2 * facing, -37, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = shade(skin); ctx.fillRect(facing > 0 ? 1 : -7, -33, 6, 3);
+    if (revenant) {
+      // Bone mask over the face.
+      ctx.fillStyle = '#e8e0cc';
+      ctx.beginPath(); ctx.ellipse(4.5 * facing, -37.5, 4, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a2224'; ctx.fillRect(facing > 0 ? 3 : -6, -33.5, 3, 1);
+    }
+    ctx.fillStyle = z.ally ? '#6ff2ff' : revenant ? '#ff3b8a' : mutant ? '#ffe14d' : '#ff3b2a';
+    ctx.beginPath(); ctx.arc(5 * facing, -38.5, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = z.ally ? 'rgba(111,242,255,0.3)' : revenant ? 'rgba(255,59,138,0.45)' : mutant ? 'rgba(255,225,77,0.4)' : 'rgba(255,59,42,0.25)';
+    ctx.beginPath(); ctx.arc(5 * facing, -38.5, 3.5, 0, Math.PI * 2); ctx.fill();
+    // near arm
+    ctx.fillStyle = skin;
+    ctx.fillRect(0, -23, (16 - lunge) * facing, 4);
+    if (z.infectTimer != null) {
+      ctx.fillStyle = 'rgba(140,190,60,0.45)';
+      ctx.beginPath(); ctx.ellipse(0, -22, 10, 13, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#b8e070';
+      ctx.beginPath(); ctx.arc(-3, -25, 2.2, 0, Math.PI * 2); ctx.arc(4, -18, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+    if (z.hitFlash > 0) {
+      ctx.fillStyle = `rgba(255,245,230,${z.hitFlash * 5})`;
+      ctx.beginPath(); ctx.ellipse(0, -24, 11, 20, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (z.frozenTimer > 0) {
+      // Frozen solid: an ice shell with a couple of highlights.
+      ctx.fillStyle = 'rgba(190,235,255,0.5)'; ctx.strokeStyle = 'rgba(232,248,255,0.9)'; ctx.lineWidth = 1.2;
+      roundedRect(-12, -46, 24, 46, 5); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.moveTo(-8, -40); ctx.lineTo(-4, -30); ctx.moveTo(6, -36); ctx.lineTo(8, -28); ctx.stroke();
+    } else if (z.chillTimer > 0) {
+      ctx.fillStyle = `rgba(150,210,255,${0.15 + z.chill * 0.35})`;
+      ctx.beginPath(); ctx.ellipse(0, -24, 11, 20, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (z.burning > 0) drawFlames(z);
+    ctx.restore();
+
+    // health bar
+    const barWidth = 26 * scale, barY = z.y - 50 * scale - bob * scale;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(z.x - barWidth / 2 - 1, barY - 1, barWidth + 2, 5);
+    ctx.fillStyle = z.ally ? '#9b6bd6' : z.revenant ? '#e0306b' : z.mutant ? '#ff7a1a' : '#d42a20'; ctx.fillRect(z.x - barWidth / 2, barY, barWidth * clamp(z.health / z.maxHealth, 0, 1), 3);
+  }
+
+  // Flickering flame tongues licking up the zombie's body (drawn in the zombie's local, scaled space).
+  function drawFlames(z) {
+    const t = performance.now() / 1000;
+    const [tip, base] = z.burnStyle === 'holy' ? ['255,244,200', '240,180,60'] : ['255,215,110', '255,90,20'];
+    const strength = clamp(z.burning / 0.3, 0.4, 1);
+    for (let i = 0; i < 6; i++) {
+      const fx = -9 + i * 3.6 + Math.sin(t * 9 + i * 2.1 + z.seed) * 1.5;
+      const baseY = -8 - (i % 3) * 9;
+      const height = (11 + Math.sin(t * 14 + i * 1.7 + z.seed) * 4 + (i % 2 ? 5 : 0)) * strength;
+      const flame = ctx.createLinearGradient(fx, baseY, fx, baseY - height);
+      flame.addColorStop(0, `rgba(${base},0.85)`);
+      flame.addColorStop(0.55, `rgba(${tip},0.7)`);
+      flame.addColorStop(1, `rgba(${tip},0)`);
+      ctx.fillStyle = flame;
+      ctx.beginPath();
+      ctx.moveTo(fx - 3.2, baseY);
+      ctx.quadraticCurveTo(fx - 2.5, baseY - height * 0.6, fx + Math.sin(t * 20 + i) * 1.5, baseY - height);
+      ctx.quadraticCurveTo(fx + 2.5, baseY - height * 0.6, fx + 3.2, baseY);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  const shadeCache = {};
+  function shade(hex) {
+    if (shadeCache[hex]) return shadeCache[hex];
+    const n = parseInt(hex.slice(1), 16);
+    const r = ((n >> 16) & 255) * 0.75, g = ((n >> 8) & 255) * 0.75, b = (n & 255) * 0.75;
+    return (shadeCache[hex] = `rgb(${r | 0},${g | 0},${b | 0})`);
+  }
+
+  function drawArrow(a) {
+    ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(Math.atan2(a.vy, a.vx));
+    const glowBall = (radius, inner, outer, core, coreRadius) => {
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+      glow.addColorStop(0, inner); glow.addColorStop(1, outer);
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0, 0, coreRadius, 0, Math.PI * 2); ctx.fill();
+    };
+    if (a.overdraw && !a.shard) {
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 14);
+      glow.addColorStop(0, 'rgba(255,225,77,0.7)'); glow.addColorStop(1, 'rgba(255,225,77,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill();
+    }
+    if (a.shard) {
+      const [trail, body] = a.ice ? ['rgba(190,235,255,0.35)', '#cfeeff'] : a.ember ? ['rgba(255,140,60,0.3)', '#ffb347'] : ['rgba(233,216,180,0.25)', '#e9d8b4'];
+      ctx.fillStyle = trail; ctx.fillRect(-12, -1, 10, 2);
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(-2, -2); ctx.lineTo(-4, 0); ctx.lineTo(-2, 2); ctx.closePath(); ctx.fill();
+    } else if (a.kind === 'frost') {
+      // Ice shard; the Glacier Lance fires a long spear, Blizzard icicles are thin.
+      const length = a.weapon === 'glacier' ? 2 : a.icicle ? 0.6 : 1;
+      ctx.fillStyle = 'rgba(190,235,255,0.25)';
+      ctx.beginPath(); ctx.ellipse(-16 * length, 0, 14 * length, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e8f8ff'; ctx.strokeStyle = '#7fc8ff'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(9 * length, 0); ctx.lineTo(-2 * length, -3.5); ctx.lineTo(-10 * length, 0); ctx.lineTo(-2 * length, 3.5); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    } else if (a.kind === 'equinox') {
+      const fireOrb = () => glowBall(11, 'rgba(255,170,80,0.95)', 'rgba(255,70,20,0)', '#fff0c0', 3.5);
+      const frostOrb = () => glowBall(11, 'rgba(170,225,255,0.95)', 'rgba(80,170,255,0)', '#ffffff', 3.5);
+      if (a.element === 'both') {
+        // Solstice: the pair spirals around each other in flight.
+        const spin = a.life * 18;
+        ctx.save(); ctx.translate(0, Math.sin(spin) * 6); fireOrb(); ctx.restore();
+        ctx.save(); ctx.translate(0, -Math.sin(spin) * 6); frostOrb(); ctx.restore();
+      } else if (a.element === 'fire') fireOrb();
+      else frostOrb();
+    } else if (a.kind === 'soul') {
+      ctx.fillStyle = 'rgba(200,235,245,0.18)';
+      ctx.beginPath(); ctx.moveTo(0, -4); ctx.quadraticCurveTo(-22, Math.sin(a.life * 30) * 4, -30, 0); ctx.quadraticCurveTo(-22, 2, 0, 4); ctx.fill();
+      glowBall(10, 'rgba(220,245,255,0.8)', 'rgba(150,210,230,0)', '#f4fbff', 3);
+    } else if (a.kind === 'hellfire') {
+      const size = a.mini ? 0.55 : 1;
+      const [inner, outer, core] = a.weapon === 'plasma'
+        ? ['rgba(255,140,230,0.95)', 'rgba(200,40,180,0)', '#ffe0f6']
+        : a.weapon === 'cataclysm'
+          ? ['rgba(255,110,50,0.95)', 'rgba(170,20,0,0)', '#ffd0a0']
+          : ['rgba(255,190,90,0.95)', 'rgba(255,70,20,0)', '#fff0c0'];
+      ctx.fillStyle = a.weapon === 'plasma' ? 'rgba(255,106,213,0.25)' : 'rgba(255,120,40,0.25)';
+      ctx.beginPath(); ctx.ellipse(-14 * size, 0, 16 * size, 5 * size, 0, 0, Math.PI * 2); ctx.fill();
+      glowBall(13 * size, inner, outer, core, 4.5 * size);
+    } else if (a.kind === 'tempest') {
+      const big = a.weapon === 'codex';
+      ctx.strokeStyle = a.weapon === 'thunderclap' ? 'rgba(255,230,128,0.7)' : 'rgba(143,211,255,0.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-20, 0);
+      for (let i = 1; i <= 4; i++) ctx.lineTo(-20 + i * 5, rand(-4, 4));
+      ctx.stroke();
+      if (big) {
+        ctx.strokeStyle = 'rgba(184,240,255,0.6)';
+        for (let i = 0; i < 3; i++) { const t = rand(0, Math.PI * 2); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t) * 16, Math.sin(t) * 16); ctx.stroke(); }
+      }
+      glowBall(big ? 15 : 11, a.weapon === 'thunderclap' ? 'rgba(255,240,170,0.9)' : 'rgba(180,230,255,0.9)', 'rgba(80,170,255,0)', '#ffffff', big ? 4.5 : 3.5);
+    } else if (a.kind === 'repeater') {
+      const accent = WEAPONS[a.weapon].accent || '#9fb4c8';
+      if (a.weapon === 'infernoRepeater' || a.weapon === 'thunderRepeater') {
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 10);
+        glow.addColorStop(0, `${accent}aa`); glow.addColorStop(1, `${accent}00`);
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = a.holy ? 'rgba(255,225,150,0.55)' : `${accent}44`; ctx.lineWidth = a.holy ? 3 : 2;
+      ctx.beginPath(); ctx.moveTo(a.holy ? -40 : -30, 0); ctx.lineTo(-10, 0); ctx.stroke();
+      ctx.strokeStyle = accent;
+      ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(4, 0); ctx.stroke();
+      ctx.fillStyle = '#e6eef5';
+      ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(3, -3); ctx.lineTo(3, 3); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.strokeStyle = 'rgba(236,224,200,0.18)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-40, 0); ctx.lineTo(-16, 0); ctx.stroke();
+      ctx.strokeStyle = '#c9a46a';
+      ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(4, 0); ctx.stroke();
+      ctx.fillStyle = '#d9dde2';
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(3, -3.5); ctx.lineTo(3, 3.5); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#b8302a';
+      ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(-20, -3); ctx.lineTo(-12, 0); ctx.lineTo(-20, 3); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    const shake = game && !reduceMotion ? game.shake : 0;
+    ctx.save();
+    if (shake) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+    ctx.drawImage(backgroundCanvas, 0, 0, viewWidth, viewHeight);
+
+    if (game) {
+      for (const s of game.splats) {
+        ctx.fillStyle = s.color;
+        ctx.beginPath(); ctx.ellipse(s.x, s.y, s.rx, s.ry, s.rot, 0, Math.PI * 2); ctx.fill();
+      }
+      drawGroundEffects();
+      const { y: cy } = center();
+      const drawables = game.zombies.map((z) => ({ y: z.y, draw: () => drawZombie(z) }));
+      drawables.push({ y: cy + 20, draw: drawKnight });
+      drawables.sort((a, b) => a.y - b.y);
+      for (const d of drawables) d.draw();
+      for (const a of game.arrows) drawArrow(a);
+      for (const p of game.particles) {
+        ctx.globalAlpha = clamp(p.life / p.maxLife, 0, 1);
+        ctx.fillStyle = p.color; ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      }
+      ctx.globalAlpha = 1;
+      drawAirEffects();
+      ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      for (const n of game.numbers) {
+        ctx.font = `800 ${n.big ? 20 : 14}px "Alegreya Sans", "Trebuchet MS", sans-serif`;
+        ctx.globalAlpha = clamp(n.life / 0.7, 0, 1);
+        ctx.strokeText(n.text, n.x, n.y);
+        ctx.fillStyle = n.color; ctx.fillText(n.text, n.x, n.y);
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      drawKnight();
+    }
+    ctx.restore();
+
+    for (const e of embers) {
+      ctx.globalAlpha = 0.4 + Math.sin(e.flicker * 2) * 0.3;
+      ctx.fillStyle = '#e27b33'; ctx.fillRect(e.x, e.y, e.size, e.size);
+    }
+    ctx.globalAlpha = 1;
+
+    const { x: cx, y: cy } = center();
+    const vignette = ctx.createRadialGradient(cx, cy, Math.min(viewWidth, viewHeight) * 0.3, cx, cy, Math.max(viewWidth, viewHeight) * 0.75);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,0.7)');
+    ctx.fillStyle = vignette; ctx.fillRect(0, 0, viewWidth, viewHeight);
+    if (game && game.running) {
+      const danger = 1 - game.health / game.stats.maxHealth;
+      if (danger > 0.4) {
+        const pulse = 0.6 + Math.sin(performance.now() / 180) * 0.4;
+        const red = ctx.createRadialGradient(cx, cy, Math.min(viewWidth, viewHeight) * 0.25, cx, cy, Math.max(viewWidth, viewHeight) * 0.7);
+        red.addColorStop(0, 'rgba(150,0,0,0)'); red.addColorStop(1, `rgba(150,0,0,${(danger - 0.4) * 0.6 * pulse})`);
+        ctx.fillStyle = red; ctx.fillRect(0, 0, viewWidth, viewHeight);
+      }
+    }
+    // One-off moments (evolutions, awakenings, Phoenix revive) get a soft glow from the knight
+    // that fades over about a second. No white fill, and none at all with reduced motion.
+    if (game && !reduceMotion && (game.flash > 0 || game.evolveFlash > 0)) {
+      const strength = Math.min(0.25, game.flash * 0.5 + game.evolveFlash * 0.25);
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(viewWidth, viewHeight) * 0.6);
+      glow.addColorStop(0, `rgba(255,236,200,${strength})`); glow.addColorStop(1, 'rgba(255,236,200,0)');
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, viewWidth, viewHeight);
+    }
+  }
+
+  function drawGroundEffects() {
+    const now = performance.now() / 1000;
+    for (const b of game.burns) {
+      const fade = clamp(b.life / 0.5, 0, 1);
+      const flicker = 0.8 + Math.sin(now * 18 + b.seed) * 0.2;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.scale(1, 0.55);
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, b.radius);
+      if (b.holy) {
+        // Holy fire: white-gold core fading to amber.
+        glow.addColorStop(0, `rgba(255,245,200,${0.6 * fade * flicker})`);
+        glow.addColorStop(0.5, `rgba(240,195,90,${0.45 * fade})`);
+        glow.addColorStop(1, 'rgba(180,120,30,0)');
+      } else if (b.lava) {
+        // Molten core with a dark cooling crust at the edge.
+        glow.addColorStop(0, `rgba(255,200,90,${0.75 * fade * flicker})`);
+        glow.addColorStop(0.45, `rgba(240,80,20,${0.6 * fade})`);
+        glow.addColorStop(0.85, `rgba(90,20,8,${0.55 * fade})`);
+        glow.addColorStop(1, 'rgba(40,10,4,0)');
+      } else {
+        glow.addColorStop(0, `rgba(255,150,50,${0.45 * fade * flicker})`);
+        glow.addColorStop(0.6, `rgba(200,60,20,${0.3 * fade})`);
+        glow.addColorStop(1, 'rgba(120,20,0,0)');
+      }
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      if (Math.random() < 0.3) addParticle(b.x + rand(-b.radius, b.radius) * 0.7, b.y + rand(-8, 8), rand(-10, 10), rand(-60, -30), 0.5, 2, b.holy ? pick(['#fff1c0', '#f0c35a']) : pick(['#ffb347', '#ff5a1f']));
+    }
+    if (game.legendaries.has('consecrated')) {
+      const { x: cx, y: cy } = center();
+      const radius = auraRadius();
+      ctx.save(); ctx.translate(cx, cy + 16); ctx.scale(1, 0.55);
+      const glow = ctx.createRadialGradient(0, 0, radius * 0.4, 0, 0, radius);
+      glow.addColorStop(0, 'rgba(240,195,90,0.05)'); glow.addColorStop(1, 'rgba(240,195,90,0.2)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(240,195,90,0.6)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,225,150,0.75)';
+      const runes = Math.round(12 * radius / AURA_RADIUS);
+      for (let i = 0; i < runes; i++) {
+        ctx.save(); ctx.rotate(game.auraSpin * 0.6 + (i / runes) * Math.PI * 2);
+        ctx.fillRect(radius - 10, -2, 6, 4);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawStormCloud() {
+    const cloud = game.stormCloud;
+    if (game.stats.weapon !== 'eye' || !cloud) return;
+    const t = performance.now() / 1000;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(cloud.x, cloud.y + 70, 40, 12, 0, 0, Math.PI * 2); ctx.fill();
+    const lit = cloud.timer < 0.12 ? 0.5 : 0.12 + Math.max(0, Math.sin(t * 7)) * 0.08;
+    for (const [dx, dy, r] of [[-22, 4, 16], [0, -4, 20], [22, 4, 16], [-10, 8, 14], [12, 8, 14]]) {
+      ctx.fillStyle = '#2a2d3a';
+      ctx.beginPath(); ctx.arc(cloud.x + dx + Math.sin(t + dx) * 1.5, cloud.y + dy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = `rgba(159,180,255,${lit})`;
+    ctx.beginPath(); ctx.ellipse(cloud.x, cloud.y + 4, 26, 10, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawGraveWard() {
+    if (!game.legendaries.has('ward')) return;
+    const { x: cx, y: cy } = center();
+    const tint = { repeater: null, hellfire: '#ff8a3d', tempest: '#8fd3ff', frost: '#bfe8ff' }[awakened('ward')] || null;
+    for (const skull of wardSkullList()) {
+      if (skull.state === 'orbit' && skull.x === 0 && skull.y === 0) Object.assign(skull, wardSlot(skull.slot, { x: cx, y: cy + 16 }));
+      if (skull.state !== 'orbit') {
+        // Flying skulls leave a faint bone-white trail.
+        ctx.strokeStyle = 'rgba(232,224,204,0.25)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        const heading = skull.state === 'out' ? Math.atan2(skull.vy, skull.vx) : Math.atan2(cy - skull.y, cx - skull.x);
+        ctx.beginPath(); ctx.moveTo(skull.x, skull.y); ctx.lineTo(skull.x - Math.cos(heading) * 22, skull.y - Math.sin(heading) * 22); ctx.stroke();
+      }
+      ctx.save(); ctx.translate(skull.x, skull.y); ctx.rotate(skull.state === 'orbit' ? 0 : skull.spin); ctx.translate(-skull.x, -skull.y);
+      if (tint) {
+        const glow = ctx.createRadialGradient(skull.x, skull.y, 0, skull.x, skull.y, 14);
+        glow.addColorStop(0, `${tint}aa`); glow.addColorStop(1, `${tint}00`);
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(skull.x, skull.y, 14, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#e8e0cc';
+      ctx.beginPath(); ctx.arc(skull.x, skull.y - 1, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(skull.x - 3.5, skull.y + 3, 7, 3.5);
+      ctx.fillStyle = '#1a1410';
+      ctx.beginPath(); ctx.arc(skull.x - 2.3, skull.y - 1, 1.6, 0, Math.PI * 2); ctx.arc(skull.x + 2.3, skull.y - 1, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(skull.x - 2, skull.y + 4.5, 1, 2); ctx.fillRect(skull.x + 1, skull.y + 4.5, 1, 2);
+      ctx.restore();
+    }
+  }
+
+  function drawAirEffects() {
+    for (const g of game.glows) {
+      const alpha = 0.35 * (g.life / g.maxLife);
+      const glow = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.radius);
+      glow.addColorStop(0, `rgba(${g.rgb},${alpha})`); glow.addColorStop(1, `rgba(${g.rgb},0)`);
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(g.x, g.y, g.radius, 0, Math.PI * 2); ctx.fill();
+    }
+    drawStormCloud();
+    drawGraveWard();
+    for (const b of game.blasts) {
+      const t = 1 - b.life / b.maxLife;
+      ctx.globalAlpha = (1 - t) * 0.7;
+      ctx.strokeStyle = b.color; ctx.lineWidth = 4 * (1 - t) + 1;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * (0.4 + t * 0.6), 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = (1 - t) * 0.25;
+      ctx.fillStyle = b.color;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * (0.3 + t * 0.6), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineJoin = 'round';
+    for (const bolt of game.bolts) {
+      const alpha = clamp(bolt.life / bolt.maxLife, 0, 1);
+      for (const [width, color] of [[bolt.width * 3, 'rgba(143,211,255,0.25)'], [bolt.width, bolt.color]]) {
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = color; ctx.lineWidth = width;
+        ctx.beginPath();
+        bolt.points.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------- Loop & input ---------- */
+  let lastTime = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    updateEmbers(dt);
+    if (game && game.running && !game.paused && !game.choosing) update(dt);
+    if (game && (game.running || game.over)) updateHud();
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function setPointer(event) {
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = event.clientX - rect.left; pointer.y = event.clientY - rect.top; pointer.hasPosition = true;
+  }
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!game || !game.running || game.paused || game.choosing) return;
+    setPointer(event);
+    pointer.held = true; pointer.queued = true;
+    try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+  });
+  canvas.addEventListener('pointermove', setPointer);
+  const release = () => { pointer.held = false; };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'm' || event.key === 'M') { toggleSound(); return; }
+    if (!game) return;
+    // event.code, because Shift+1 types "!" on most layouts.
+    if (game.choosing && event.shiftKey && /^Digit[123]$/.test(event.code)) { banishBoon(Number(event.code.slice(5)) - 1); return; }
+    if (game.choosing && ['1', '2', '3'].includes(event.key)) { takeBoon(Number(event.key) - 1); return; }
+    if (game.choosing && (event.key === 'r' || event.key === 'R')) { rerollBoons(); return; }
+    if (event.key === 'p' || event.key === 'P' || event.key === 'Escape') setPaused(!game.paused);
+    if (event.key === 's' || event.key === 'S') setStatsVisible(ui.statsPanel.hidden);
+  });
+  ui.statsToggle.addEventListener('click', () => setStatsVisible(ui.statsPanel.hidden));
+  const soundToggle = $('soundToggle');
+  function renderSoundToggle() {
+    const muted = sound.isMuted();
+    soundToggle.textContent = muted ? 'Sound off (M)' : 'Sound on (M)';
+    soundToggle.setAttribute('aria-pressed', String(muted));
+  }
+  function toggleSound() { sound.toggleMute(); renderSoundToggle(); }
+  soundToggle.addEventListener('click', toggleSound);
+  renderSoundToggle();
+  window.addEventListener('blur', () => { if (game && game.running && !game.choosing) setPaused(true); });
+
+  $('startButton').addEventListener('click', newGame);
+  ui.rerollButton.addEventListener('click', rerollBoons);
+  $('restartButton').addEventListener('click', newGame);
+  $('resumeButton').addEventListener('click', () => setPaused(false));
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
