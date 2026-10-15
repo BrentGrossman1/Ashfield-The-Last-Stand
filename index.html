@@ -102,6 +102,10 @@ body { background: var(--ash); color: var(--ink); font-family: var(--body); over
   border: 0; padding: 8px 26px 10px; cursor: pointer; border-radius: 2px; box-shadow: 0 3px 0 #7a3a10;
 }
 .btn:hover { filter: brightness(1.1); }
+.pause-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn-secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+.btn-secondary:hover { border-color: var(--blood); color: #ff8a7a; filter: none; }
+.btn-secondary.confirming { border-color: var(--blood); color: #ff8a7a; }
 .btn:focus-visible, .card:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #7a3a10; }
 
@@ -222,7 +226,10 @@ body { background: var(--ash); color: var(--ink); font-family: var(--body); over
     <div class="panel">
       <h2>Paused</h2>
       <p class="muted">Press P or Esc to return to the field.</p>
-      <button class="btn" id="resumeButton" type="button">Resume</button>
+      <div class="pause-actions">
+        <button class="btn" id="resumeButton" type="button">Resume</button>
+        <button class="btn btn-secondary" id="pauseRestartButton" type="button">Restart run</button>
+      </div>
     </div>
   </div>
 
@@ -916,14 +923,29 @@ body { background: var(--ash); color: var(--ink); font-family: var(--body); over
     sound.evolve();
   }
 
+  // Momentum: while working toward an evolution, the epic type you've taken the most so far
+  // (ties included) shows up 3x as often, so pure lines like Hellfire are reachable on purpose.
+  const EPIC_MOMENTUM = 3;
+  function boonWeight(u) {
+    if (u.tier !== 'epic') return u.weight;
+    const s = game.stats;
+    const tier = WEAPONS[s.weapon].tier;
+    let counts;
+    if (tier === 0) counts = { split: s.arrowCount - 1, shrapnel: s.shrapnel, rime: s.rime };
+    else if (tier === 1) counts = { split: s.secondSplit, shrapnel: s.secondBurst, rime: s.secondRime };
+    else return u.weight;
+    const top = Math.max(...Object.values(counts));
+    return top > 0 && counts[u.id] === top ? u.weight * EPIC_MOMENTUM : u.weight;
+  }
+
   // exclude: boon ids already on screen (used when a banish redraws one card).
   function rollBoons(count = 3, exclude = new Set()) {
     const pool = UPGRADES.filter((u) => !game.banished.has(u.id) && !exclude.has(u.id) && (!u.available || u.available(game.stats)));
     const chosen = [];
     while (chosen.length < count && pool.length) {
-      const total = pool.reduce((sum, u) => sum + u.weight, 0);
+      const total = pool.reduce((sum, u) => sum + boonWeight(u), 0);
       let roll = Math.random() * total;
-      const index = pool.findIndex((u) => (roll -= u.weight) <= 0);
+      const index = pool.findIndex((u) => (roll -= boonWeight(u)) <= 0);
       const boon = pool.splice(index, 1)[0];
       // Commons can roll as a blue rare at double strength; Keen Edge can roll as a purple epic.
       let multiplier = 1, tier = boon.tier, label = boon.tier;
@@ -1166,6 +1188,7 @@ body { background: var(--ash); color: var(--ink); font-family: var(--body); over
     if (!game || !game.running || game.choosing) return;
     game.paused = paused; ui.pauseScreen.hidden = !paused;
     pointer.held = false; pointer.queued = false;
+    resetRestartButton();
     sound.muffle(paused);
   }
 
@@ -2775,6 +2798,24 @@ body { background: var(--ash); color: var(--ink); font-family: var(--body); over
   ui.rerollButton.addEventListener('click', rerollBoons);
   $('restartButton').addEventListener('click', newGame);
   $('resumeButton').addEventListener('click', () => setPaused(false));
+  // Restart from the pause screen takes a second click to confirm, so a stray click can't end a run.
+  const pauseRestartButton = $('pauseRestartButton');
+  let restartConfirmTimer = null;
+  function resetRestartButton() {
+    clearTimeout(restartConfirmTimer);
+    pauseRestartButton.classList.remove('confirming');
+    pauseRestartButton.textContent = 'Restart run';
+  }
+  pauseRestartButton.addEventListener('click', () => {
+    if (pauseRestartButton.classList.contains('confirming')) {
+      resetRestartButton();
+      newGame();
+      return;
+    }
+    pauseRestartButton.classList.add('confirming');
+    pauseRestartButton.textContent = 'Click again to restart';
+    restartConfirmTimer = setTimeout(resetRestartButton, 3000);
+  });
 
   window.addEventListener('resize', resize);
   resize();
