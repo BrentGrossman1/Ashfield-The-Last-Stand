@@ -90,9 +90,3 @@ Once you own a legendary and an evolved weapon, the legendary **awakens** with a
 | Phoenix Plume | Phoenix Volley: revive fires 30 piercing bolts | Ashen Rebirth: revive leaves a lava ring | Storm Rebirth: revive calls lightning for 6s | Frost Nova: revive freezes the field for 5s |
 | Grave Ward | Bone Sentries: thrown skulls spit darts at the turnaround | Burning Skulls: bites ignite | Storm Skulls: bites chain lightning | Frozen Skulls: bites freeze |
 
-## Deploying to GitHub Pages
-
-1. Push `index.html` to the root of the repo's `main` branch.
-2. In the repo, go to **Settings → Pages**.
-3. Under **Build and deployment**, set Source to **Deploy from a branch**, branch `main`, folder `/ (root)`, then save.
-4. After a minute the site is live at `https://<username>.github.io/<repo>/`.
